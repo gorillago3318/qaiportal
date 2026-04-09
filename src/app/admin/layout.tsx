@@ -36,9 +36,10 @@ export default function AdminLayout({
         .single()
         .then(({ data }) => {
           if (!data) return
-          setUserName(data.full_name)
+          const profile = data as { full_name: string; role: string }
+          setUserName(profile.full_name)
           // Ensure only admins can access admin portal
-          if (!["super_admin", "admin"].includes(data.role)) {
+          if (!["super_admin", "admin"].includes(profile.role)) {
             router.push("/agent/dashboard")
           }
         })

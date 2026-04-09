@@ -35,7 +35,7 @@ export default function AgentLayout({
         .eq("id", user.id)
         .single()
         .then(({ data }) => {
-          if (data) setUserName(data.full_name)
+          if (data) setUserName((data as { full_name: string }).full_name)
         })
     })
   }, [router])
