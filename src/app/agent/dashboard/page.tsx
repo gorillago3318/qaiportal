@@ -1,155 +1,444 @@
-import { LayoutDashboard, Calculator, FolderOpen, DollarSign, TrendingUp, ArrowRight } from "lucide-react"
+"use client"
+
+import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import {
+  FolderOpen,
+  Calculator,
+  DollarSign,
+  TrendingUp,
+  ArrowRight,
+  Plus,
+  Eye,
+} from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { createClient } from "@/lib/supabase/client"
+import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import type { Profile, Calculation, CaseStatus } from "@/types/database"
 
-const stats = [
-  {
-    label: "Active Cases",
-    value: "—",
-    icon: FolderOpen,
-    color: "text-[#3B82F6]",
-    bg: "bg-[#EFF6FF]",
-    href: "/agent/cases",
-  },
-  {
-    label: "Calculations",
-    value: "—",
-    icon: Calculator,
-    color: "text-[#6366F1]",
-    bg: "bg-[#EEF2FF]",
-    href: "/agent/calculations",
-  },
-  {
-    label: "Commissions (MYR)",
-    value: "—",
-    icon: DollarSign,
-    color: "text-[#10B981]",
-    bg: "bg-[#ECFDF5]",
-    href: "/agent/commissions",
-  },
-  {
-    label: "Approved Cases",
-    value: "—",
-    icon: TrendingUp,
-    color: "text-[#C9A84C]",
-    bg: "bg-[#FFFBEB]",
-    href: "/agent/cases",
-  },
-]
+const STATUS_COLORS: Record<string, string> = {
+  draft: "bg-gray-100 text-gray-700",
+  submitted: "bg-blue-100 text-blue-700",
+  bank_processing: "bg-purple-100 text-purple-700",
+  kiv: "bg-amber-100 text-amber-700",
+  approved: "bg-green-100 text-green-700",
+  declined: "bg-red-100 text-red-700",
+  accepted: "bg-emerald-100 text-emerald-700",
+  rejected: "bg-red-100 text-red-700",
+  payment_pending: "bg-orange-100 text-orange-700",
+  paid: "bg-green-100 text-green-800",
+}
 
-const quickLinks = [
-  {
-    href: "/agent/calculations/new",
-    label: "New Calculation",
-    description: "Start a new loan calculation for a client",
-    icon: Calculator,
-    variant: "gold" as const,
-  },
-  {
-    href: "/agent/cases",
-    label: "View My Cases",
-    description: "Track your submitted cases",
-    icon: FolderOpen,
-    variant: "outline" as const,
-  },
-]
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  submitted: "Submitted",
+  bank_processing: "Bank Processing",
+  kiv: "KIV",
+  approved: "Approved",
+  declined: "Declined",
+  accepted: "Accepted",
+  rejected: "Rejected",
+  payment_pending: "Payment Pending",
+  paid: "Paid",
+}
+
+const LOAN_TYPE_COLORS: Record<string, string> = {
+  refinance: "bg-blue-50 text-blue-700 border-blue-200",
+  subsale: "bg-green-50 text-green-700 border-green-200",
+  developer: "bg-purple-50 text-purple-700 border-purple-200",
+}
+
+const LOAN_TYPE_LABELS: Record<string, string> = {
+  refinance: "Refinance",
+  subsale: "Subsale",
+  developer: "Developer",
+}
+
+interface CaseStatusCount {
+  status: CaseStatus
+  count: number
+}
+
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  iconBg,
+  iconColor,
+  href,
+  loading,
+}: {
+  label: string
+  value: string | number
+  icon: React.ElementType
+  iconBg: string
+  iconColor: string
+  href: string
+  loading?: boolean
+}) {
+  return (
+    <Link href={href}>
+      <Card className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-[#C9A84C] h-full">
+        <CardContent className="pt-5 pb-5">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                {label}
+              </p>
+              {loading ? (
+                <Skeleton className="h-8 w-20 mt-1" />
+              ) : (
+                <p className="text-2xl font-bold text-[#0A1628] font-heading">
+                  {value}
+                </p>
+              )}
+            </div>
+            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", iconBg)}>
+              <Icon className={cn("h-5 w-5", iconColor)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  )
+}
 
 export default function AgentDashboardPage() {
+  const router = useRouter()
+  const [profile, setProfile] = React.useState<Profile | null>(null)
+  const [recentCalcs, setRecentCalcs] = React.useState<Calculation[]>([])
+  const [caseStatusCounts, setCaseStatusCounts] = React.useState<CaseStatusCount[]>([])
+  const [totalCases, setTotalCases] = React.useState(0)
+  const [activeCases, setActiveCases] = React.useState(0)
+  const [paidCommissions, setPaidCommissions] = React.useState(0)
+  const [loading, setLoading] = React.useState(true)
+
+  const today = new Date().toLocaleDateString("en-MY", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+
+  React.useEffect(() => {
+    const supabase = createClient()
+
+    async function fetchData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push("/login")
+        return
+      }
+
+      // Fetch profile
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single()
+
+      if (profileData) setProfile(profileData as Profile)
+
+      // Fetch cases summary
+      const { data: casesData } = await supabase
+        .from("cases")
+        .select("status, id")
+        .eq("agent_id", user.id)
+
+      if (casesData) {
+        const counts: Record<string, number> = {}
+        casesData.forEach((c: { status: string; id: string }) => {
+          counts[c.status] = (counts[c.status] || 0) + 1
+        })
+        const statusCounts = Object.entries(counts).map(([status, count]) => ({
+          status: status as CaseStatus,
+          count,
+        }))
+        setCaseStatusCounts(statusCounts)
+        setTotalCases(casesData.length)
+        const active = casesData.filter((c: { status: string; id: string }) =>
+          ["submitted", "bank_processing", "kiv", "approved", "accepted"].includes(c.status)
+        ).length
+        setActiveCases(active)
+      }
+
+      // Fetch paid commissions (via cases)
+      const { data: paidCases } = await supabase
+        .from("cases")
+        .select("id")
+        .eq("agent_id", user.id)
+        .eq("status", "paid")
+
+      if (paidCases && paidCases.length > 0) {
+        const caseIds = paidCases.map((c: { id: string }) => c.id)
+        const { data: commissionsData } = await supabase
+          .from("commissions")
+          .select("paid_amount")
+          .in("case_id", caseIds)
+          .eq("status", "paid")
+
+        if (commissionsData) {
+          const total = commissionsData.reduce(
+            (sum, c: { paid_amount: number | null }) => sum + (c.paid_amount || 0),
+            0
+          )
+          setPaidCommissions(total)
+        }
+      }
+
+      // Fetch recent calculations (last 5)
+      const { data: calcsData } = await supabase
+        .from("calculations")
+        .select("*")
+        .eq("agent_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(5)
+
+      if (calcsData) setRecentCalcs(calcsData as Calculation[])
+
+      setLoading(false)
+    }
+
+    fetchData()
+  }, [router])
+
+  const firstName = profile?.full_name?.split(" ")[0] || "Agent"
+
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-[#0A1628]">Dashboard</h1>
-        <p className="text-[#6B7280] text-sm mt-1">Welcome back. Here&apos;s your overview.</p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon
-          return (
-            <Link key={stat.label} href={stat.href}>
-              <Card className="hover:shadow-card-hover transition-shadow cursor-pointer">
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs font-medium text-[#6B7280] uppercase tracking-wide">
-                        {stat.label}
-                      </p>
-                      <p className="text-2xl font-bold text-[#0A1628] mt-1 font-heading">
-                        {stat.value}
-                      </p>
-                    </div>
-                    <div className={`h-10 w-10 ${stat.bg} rounded-xl flex items-center justify-center`}>
-                      <Icon className={`h-5 w-5 ${stat.color}`} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          )
-        })}
-      </div>
-
-      {/* Quick actions */}
-      <div>
-        <h2 className="font-heading text-lg font-semibold text-[#0A1628] mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {quickLinks.map((link) => {
-            const Icon = link.icon
-            return (
-              <Card key={link.href} className="hover:shadow-card-hover transition-shadow">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-[#F3F4F6] rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Icon className="h-6 w-6 text-[#0A1628]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-[#0A1628]">{link.label}</p>
-                      <p className="text-sm text-[#6B7280] mt-0.5">{link.description}</p>
-                    </div>
-                    <Button variant={link.variant} size="sm" asChild>
-                      <Link href={link.href}>
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+      <div className="flex items-start justify-between">
+        <div>
+          {loading ? (
+            <>
+              <Skeleton className="h-8 w-52 mb-2" />
+              <Skeleton className="h-4 w-36" />
+            </>
+          ) : (
+            <>
+              <h1 className="font-heading text-2xl font-bold text-[#0A1628]">
+                Welcome back, {firstName}!
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                {profile?.role?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                {profile?.agent_code && ` · ${profile.agent_code}`}
+              </p>
+            </>
+          )}
+        </div>
+        <div className="text-right hidden sm:block">
+          <p className="text-sm text-gray-500">{today}</p>
         </div>
       </div>
 
-      {/* Recent cases placeholder */}
+      {/* Stats row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          label="Total Cases"
+          value={totalCases}
+          icon={FolderOpen}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-600"
+          href="/agent/cases"
+          loading={loading}
+        />
+        <StatCard
+          label="Active Cases"
+          value={activeCases}
+          icon={TrendingUp}
+          iconBg="bg-amber-50"
+          iconColor="text-[#C9A84C]"
+          href="/agent/cases"
+          loading={loading}
+        />
+        <StatCard
+          label="Commission Pipeline"
+          value={loading ? "—" : formatCurrency(0)}
+          icon={DollarSign}
+          iconBg="bg-purple-50"
+          iconColor="text-purple-600"
+          href="/agent/commissions"
+          loading={loading}
+        />
+        <StatCard
+          label="Paid Out"
+          value={loading ? "—" : formatCurrency(paidCommissions)}
+          icon={DollarSign}
+          iconBg="bg-green-50"
+          iconColor="text-green-600"
+          href="/agent/commissions"
+          loading={loading}
+        />
+      </div>
+
+      {/* Main two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Recent Calculations — 60% */}
+        <div className="lg:col-span-3">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="font-heading text-base">Recent Calculations</CardTitle>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/agent/calculations" className="text-[#C9A84C] hover:text-[#B8912A] text-xs">
+                    View all <ArrowRight className="h-3 w-3 ml-1" />
+                  </Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : recentCalcs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="h-14 w-14 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
+                    <Calculator className="h-7 w-7 text-gray-300" />
+                  </div>
+                  <p className="text-sm text-gray-500">No calculations yet</p>
+                  <Button variant="gold" size="sm" className="mt-3" asChild>
+                    <Link href="/agent/calculations/new">
+                      <Plus className="h-3 w-3" />
+                      New Calculation
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">Client</th>
+                        <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">Type</th>
+                        <th className="text-right text-xs font-medium text-gray-500 pb-2 pr-3">Est. Saving</th>
+                        <th className="text-right text-xs font-medium text-gray-500 pb-2 pr-3">Date</th>
+                        <th className="text-right text-xs font-medium text-gray-500 pb-2">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {recentCalcs.map((calc) => {
+                        const results = calc.results as Record<string, number> | null
+                        const monthlySavings = results?.monthlySavings ?? 0
+                        return (
+                          <tr key={calc.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="py-3 pr-3">
+                              <p className="font-medium text-[#0A1628] truncate max-w-[120px]">
+                                {calc.client_name}
+                              </p>
+                            </td>
+                            <td className="py-3 pr-3">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
+                                LOAN_TYPE_COLORS[calc.loan_type] || "bg-gray-50 text-gray-600 border-gray-200"
+                              )}>
+                                {LOAN_TYPE_LABELS[calc.loan_type] || calc.loan_type}
+                              </span>
+                            </td>
+                            <td className="py-3 pr-3 text-right">
+                              {monthlySavings > 0 ? (
+                                <span className="font-medium text-green-700">
+                                  +{formatCurrency(monthlySavings)}/mo
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 pr-3 text-right text-gray-500">
+                              {formatDate(calc.created_at)}
+                            </td>
+                            <td className="py-3 text-right">
+                              <Button variant="ghost" size="sm" asChild>
+                                <Link href={`/agent/calculations/${calc.id}`}>
+                                  <Eye className="h-3 w-3" />
+                                  View
+                                </Link>
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Actions — 40% */}
+        <div className="lg:col-span-2">
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle className="font-heading text-base">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="gold" size="lg" className="w-full justify-start gap-3" asChild>
+                <Link href="/agent/calculations/new">
+                  <Calculator className="h-5 w-5" />
+                  New Calculation
+                </Link>
+              </Button>
+              <Button variant="navy-outline" size="lg" className="w-full justify-start gap-3" asChild>
+                <Link href="/agent/cases/new">
+                  <Plus className="h-5 w-5" />
+                  Submit New Case
+                </Link>
+              </Button>
+              <Button variant="ghost" size="lg" className="w-full justify-start gap-3 text-[#0A1628]" asChild>
+                <Link href="/agent/cases">
+                  <FolderOpen className="h-5 w-5" />
+                  View My Cases
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Cases by Status — horizontal pills */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Recent Cases</CardTitle>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/agent/cases" className="text-[#C9A84C] hover:text-[#B8912A]">
-                View all <ArrowRight className="h-3 w-3 ml-1" />
-              </Link>
-            </Button>
-          </div>
+          <CardTitle className="font-heading text-base">Cases by Status</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="h-16 w-16 bg-[#F3F4F6] rounded-2xl flex items-center justify-center mb-4">
-              <FolderOpen className="h-8 w-8 text-[#D1D5DB]" />
+          {loading ? (
+            <div className="flex gap-3 flex-wrap">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-8 w-24 rounded-full" />
+              ))}
             </div>
-            <p className="font-medium text-[#374151]">No cases yet</p>
-            <p className="text-sm text-[#9CA3AF] mt-1 mb-4">
-              Create your first calculation to get started
-            </p>
-            <Button variant="gold" size="sm" asChild>
-              <Link href="/agent/calculations/new">
-                <Calculator className="h-4 w-4" />
-                New Calculation
-              </Link>
-            </Button>
-          </div>
+          ) : caseStatusCounts.length === 0 ? (
+            <p className="text-sm text-gray-400">No cases yet. Submit your first case to see status breakdown.</p>
+          ) : (
+            <div className="flex gap-3 flex-wrap">
+              {(["draft", "submitted", "bank_processing", "kiv", "approved", "paid"] as CaseStatus[]).map((status) => {
+                const item = caseStatusCounts.find((c) => c.status === status)
+                const count = item?.count ?? 0
+                return (
+                  <Link key={status} href="/agent/cases">
+                    <span className={cn(
+                      "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium border transition-opacity",
+                      count === 0 ? "opacity-40" : "opacity-100 hover:opacity-80",
+                      STATUS_COLORS[status] || "bg-gray-100 text-gray-700",
+                      "border-transparent"
+                    )}>
+                      {STATUS_LABELS[status]}
+                      <span className="bg-white/60 rounded-full px-1.5 py-0.5 text-xs font-bold">
+                        {count}
+                      </span>
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
