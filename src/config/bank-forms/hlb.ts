@@ -330,28 +330,60 @@ export const hlbConfig: BankFormConfig = {
           label: 'Previous Employer Name (if current < 1 year)',
           type: 'text',
           required: false,
-          gridColumn: 2
+          gridColumn: 2,
+          conditional: { 
+            field: 'length_service_years', 
+            custom_logic: (formData) => {
+              const years = parseInt(formData.length_service_years) || 0;
+              const months = parseInt(formData.length_service_months) || 0;
+              return (years < 1) || (years === 0 && months < 12);
+            }
+          }
         },
         {
           id: 'prev_nature_of_business',
           label: 'Previous Nature of Business',
           type: 'text',
           required: false,
-          gridColumn: 2
+          gridColumn: 2,
+          conditional: { 
+            field: 'length_service_years', 
+            custom_logic: (formData) => {
+              const years = parseInt(formData.length_service_years) || 0;
+              const months = parseInt(formData.length_service_months) || 0;
+              return (years < 1) || (years === 0 && months < 12);
+            }
+          }
         },
         {
           id: 'prev_occupation',
           label: 'Previous Occupation',
           type: 'text',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { 
+            field: 'length_service_years', 
+            custom_logic: (formData) => {
+              const years = parseInt(formData.length_service_years) || 0;
+              const months = parseInt(formData.length_service_months) || 0;
+              return (years < 1) || (years === 0 && months < 12);
+            }
+          }
         },
         {
           id: 'prev_length_service',
           label: 'Previous Length of Service (Years)',
           type: 'number',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { 
+            field: 'length_service_years', 
+            custom_logic: (formData) => {
+              const years = parseInt(formData.length_service_years) || 0;
+              const months = parseInt(formData.length_service_months) || 0;
+              return (years < 1) || (years === 0 && months < 12);
+            }
+          }
         }
       ]
     },
@@ -489,9 +521,28 @@ export const hlbConfig: BankFormConfig = {
         {
           id: 'current_bank_name',
           label: 'Current Bank Name (for Refinancing)',
-          type: 'text',
+          type: 'select',
           required: false,
-          placeholder: 'Enter current bank name',
+          options: [
+            { label: 'Maybank', value: 'Maybank' },
+            { label: 'CIMB Bank', value: 'CIMB Bank' },
+            { label: 'Public Bank', value: 'Public Bank' },
+            { label: 'RHB Bank', value: 'RHB Bank' },
+            { label: 'Hong Leong Bank', value: 'Hong Leong Bank' },
+            { label: 'AmBank', value: 'AmBank' },
+            { label: 'OCBC Bank', value: 'OCBC Bank' },
+            { label: 'UOB Malaysia', value: 'UOB Malaysia' },
+            { label: 'Standard Chartered', value: 'Standard Chartered' },
+            { label: 'HSBC Bank Malaysia', value: 'HSBC Bank Malaysia' },
+            { label: 'Alliance Bank', value: 'Alliance Bank' },
+            { label: 'Affin Bank', value: 'Affin Bank' },
+            { label: 'Bank Islam', value: 'Bank Islam' },
+            { label: 'Bank Muamalat', value: 'Bank Muamalat' },
+            { label: 'BSN', value: 'BSN' },
+            { label: 'MBSB Bank', value: 'MBSB Bank' },
+            { label: 'Citibank Malaysia', value: 'Citibank Malaysia' }
+          ],
+          placeholder: 'Select current bank',
           gridColumn: 2
         },
         {
@@ -518,42 +569,48 @@ export const hlbConfig: BankFormConfig = {
             { label: 'Self-Financed', value: 'self' },
             { label: 'No', value: 'no' }
           ],
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { field: 'insurance_type', not_equals: 'none' }
         },
         {
           id: 'insurance_premium_amount',
           label: 'Total Premium/Contribution Amount (RM)',
           type: 'currency',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { field: 'insurance_type', not_equals: 'none' }
         },
         {
           id: 'insurance_term_months',
           label: 'Term Insured/Covered (Months)',
           type: 'number',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { field: 'insurance_type', not_equals: 'none' }
         },
         {
           id: 'deferment_period_months',
           label: 'Deferment Period (Months)',
           type: 'number',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { field: 'insurance_type', not_equals: 'none' }
         },
         {
           id: 'sum_insured_main',
           label: 'Sum Insured - Main Applicant (RM)',
           type: 'currency',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { field: 'insurance_type', not_equals: 'none' }
         },
         {
           id: 'sum_insured_joint',
           label: 'Sum Insured - Joint Applicant (RM)',
           type: 'currency',
           required: false,
-          gridColumn: 1
+          gridColumn: 1,
+          conditional: { field: 'insurance_type', not_equals: 'none' }
         }
       ]
     },

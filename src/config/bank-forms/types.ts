@@ -35,7 +35,9 @@ export interface FormField {
   defaultValue?: any
   conditional?: {
     field: string
-    equals: any
+    equals?: any
+    not_equals?: any
+    custom_logic?: (formData: Record<string, any>) => boolean
   }
   gridColumn?: 1 | 2 // Span 1 or 2 columns in grid
 }

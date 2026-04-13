@@ -19,7 +19,19 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
 }) => {
   // Check conditional rendering
   if (field.conditional) {
-    const conditionMet = value[field.conditional.field] === field.conditional.equals
+    let conditionMet = false
+    
+    if (field.conditional.custom_logic) {
+      // Use custom logic function
+      conditionMet = field.conditional.custom_logic(value)
+    } else if (field.conditional.not_equals !== undefined) {
+      // Check not equals
+      conditionMet = value[field.conditional.field] !== field.conditional.not_equals
+    } else if (field.conditional.equals !== undefined) {
+      // Check equals (original behavior)
+      conditionMet = value[field.conditional.field] === field.conditional.equals
+    }
+    
     if (!conditionMet) return null
   }
 
