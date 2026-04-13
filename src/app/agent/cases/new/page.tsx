@@ -12,6 +12,76 @@ import { DynamicBankForm, getTotalSections } from '@/components/dynamic-bank-for
 import { CasePrintView } from '@/components/case-print-view'
 import { CoBorrowerManager } from '@/components/co-borrower-manager'
 
+// ─── Helper Functions ──────────────────────────────────────────
+
+const formatDateToDDMMYYYY = (dateString: string | null): string => {
+  if (!dateString) return ''
+  try {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return dateString // Return as-is if invalid
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  } catch {
+    return dateString
+  }
+}
+
+const formatDateToYYYYMMDD = (dateString: string): string => {
+  // Convert DD/MM/YYYY to YYYY-MM-DD for HTML date input
+  if (!dateString || !dateString.includes('/')) return dateString
+  const [day, month, year] = dateString.split('/')
+  return `${year}-${month}-${day}`
+}
+
+const formatDateForDisplay = (dateString: string): string => {
+  // Convert YYYY-MM-DD from input to DD/MM/YYYY for display
+  if (!dateString || dateString.length !== 10) return dateString
+  const [year, month, day] = dateString.split('-')
+  return `${day}/${month}/${year}`
+}
+
+// Extract DOB from Malaysian NRIC (format: YYMMDD-XX-XXXX)
+const extractDOBFromNRIC = (nric: string): string | null => {
+  if (!nric || nric.length < 6) return null
+  
+  // Remove dashes and spaces
+  const cleanNRIC = nric.replace(/[-\s]/g, '')
+  
+  // First 6 digits should be YYMMDD
+  if (cleanNRIC.length < 6) return null
+  
+  const yearStr = cleanNRIC.substring(0, 2)
+  const monthStr = cleanNRIC.substring(2, 4)
+  const dayStr = cleanNRIC.substring(4, 6)
+  
+  const year = parseInt(yearStr)
+  const month = parseInt(monthStr)
+  const day = parseInt(dayStr)
+  
+  // Validate ranges
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  
+  // Determine century (if year > current year last 2 digits, assume 1900s)
+  const currentYear = new Date().getFullYear() % 100
+  const fullYear = year > currentYear ? 1900 + year : 2000 + year
+  
+  // Format as YYYY-MM-DD for HTML date input
+  return `${fullYear}-${monthStr}-${dayStr}`
+}
+
+// Input validation helpers
+const validateNumericInput = (value: string): string => {
+  // Allow only numbers
+  return value.replace(/\D/g, '')
+}
+
+const validateDecimalInput = (value: string): string => {
+  // Allow numbers and one decimal point
+  return value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1')
+}
+
 // ─── Constants ───────────────────────────────────────────────────
 const SUPPORTED_BANKS = getSupportedBanks()
 const ALL_MALAYSIAN_BANKS = [
@@ -309,12 +379,6 @@ const initialForm: CaseFormData = {
   notes: ''
 }
 
-const formatDateToDDMMYYYY = (dateString: string | null): string => {
-  if (!dateString) return ''
-  const [year, month, day] = dateString.split('-')
-  return day + '/' + month + '/' + year
-}
-
 const formatTenureFromMonths = (months: number | null): string => {
   if (!months) return ''
   const years = Math.floor(months / 12)
@@ -336,7 +400,7 @@ export default function NewCasePage() {
   const [savedCaseData, setSavedCaseData] = useState<any>(null)
 
   const bankSpecificSteps = bankConfig ? getTotalSections(bankConfig) : 0
-  const totalSteps = 2 + bankSpecificSteps
+  const totalSteps = 3 + bankSpecificSteps // Step 1: Bank, Step 2: Client, Step 3: Co-Borrowers, then bank sections
 
   useEffect(() => {
     if (formData.selected_bank) {
@@ -426,7 +490,20 @@ export default function NewCasePage() {
   }
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value }
+      
+      // Auto-extract DOB from NRIC
+      if (field === 'client_ic' && prev.id_type === 'nric') {
+        const dob = extractDOBFromNRIC(value)
+        if (dob) {
+          newData.client_dob = dob
+        }
+      }
+      
+      return newData
+    })
+    
     if (errors[field]) {
       setErrors(prev => {
         const newErrors = { ...prev }
@@ -589,9 +666,11 @@ export default function NewCasePage() {
         return renderStep1_BankSelection()
       case 2:
         return renderStep2_ClientInfo()
+      case 3:
+        return renderStep3_CoBorrowers()
       default:
-        if (bankConfig && currentStep > 2 && currentStep <= 2 + bankSpecificSteps) {
-          const sectionIndex = currentStep - 3
+        if (bankConfig && currentStep > 3 && currentStep <= 3 + bankSpecificSteps) {
+          const sectionIndex = currentStep - 4
           const section = bankConfig.sections[sectionIndex]
           if (section) {
             return (
@@ -646,7 +725,11 @@ export default function NewCasePage() {
               {SUPPORTED_BANKS.map((bank) => (
                 <button
                   key={bank.id}
-                  onClick={() => handleInputChange('selected_bank', bank.id)}
+                  onClick={() => {
+                    handleInputChange('selected_bank', bank.id)
+                    // Auto-advance to next step after bank selection for better UX
+                    setTimeout(() => setCurrentStep(2), 100)
+                  }}
                   className={cn(
                     "p-6 border-2 rounded-lg transition-all text-left",
                     formData.selected_bank === bank.id
@@ -674,14 +757,14 @@ export default function NewCasePage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Client Information</h2>
-          <p className="text-gray-600 mt-1">Enter the main applicant's details</p>
+          <p className="text-gray-600 mt-1">Enter the primary borrower's details</p>
         </div>
 
         <Card>
-          <CardContent className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <CardContent className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                 <select
                   value={formData.client_title}
                   onChange={(e) => handleInputChange('client_title', e.target.value)}
@@ -689,20 +772,20 @@ export default function NewCasePage() {
                 >
                   <option value="">Select</option>
                   <option value="mr">Mr</option>
-                  <option value="ms">Ms</option>
                   <option value="mrs">Mrs</option>
+                  <option value="ms">Ms</option>
                   <option value="dr">Dr</option>
                   <option value="prof">Prof</option>
                 </select>
               </div>
-              
-              <div className="md:col-span-3">
+
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
                 <input
                   type="text"
                   value={formData.client_name}
                   onChange={(e) => handleInputChange('client_name', e.target.value)}
-                  placeholder="Enter full name as per NRIC/Passport"
+                  placeholder="Enter full name as per IC/Passport"
                   className={cn(
                     "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
                     errors.client_name && "border-red-500"
@@ -719,55 +802,42 @@ export default function NewCasePage() {
               <select
                 value={formData.id_type}
                 onChange={(e) => handleInputChange('id_type', e.target.value)}
-                className="w-full md:w-1/3 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                <option value="nric">NRIC</option>
+                <option value="nric">NRIC (Malaysian Identity Card)</option>
                 <option value="passport">Passport</option>
                 <option value="others">Others</option>
               </select>
             </div>
 
             {formData.id_type === 'nric' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">NRIC Number *</label>
-                  <input
-                    type="text"
-                    value={formData.client_ic}
-                    onChange={(e) => handleInputChange('client_ic', e.target.value)}
-                    placeholder="e.g., 900101-10-1234"
-                    className={cn(
-                      "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-                      errors.client_ic && "border-red-500"
-                    )}
-                  />
-                  {errors.client_ic && (
-                    <p className="text-red-500 text-sm mt-1">{errors.client_ic}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">NRIC Number *</label>
+                <input
+                  type="text"
+                  value={formData.client_ic}
+                  onChange={(e) => handleInputChange('client_ic', e.target.value)}
+                  placeholder="e.g., 900101-01-1234"
+                  className={cn(
+                    "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
+                    errors.client_ic && "border-red-500"
                   )}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Old NRIC Number</label>
-                  <input
-                    type="text"
-                    value={formData.client_old_ic}
-                    onChange={(e) => handleInputChange('client_old_ic', e.target.value)}
-                    placeholder="Optional"
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                />
+                {errors.client_ic && (
+                  <p className="text-red-500 text-sm mt-1">{errors.client_ic}</p>
+                )}
               </div>
             )}
 
             {formData.id_type === 'passport' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Passport Number *</label>
                   <input
                     type="text"
                     value={formData.client_passport}
                     onChange={(e) => handleInputChange('client_passport', e.target.value)}
-                    placeholder="e.g., A12345678"
+                    placeholder="Enter passport number"
                     className={cn(
                       "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
                       errors.client_passport && "border-red-500"
@@ -777,7 +847,6 @@ export default function NewCasePage() {
                     <p className="text-red-500 text-sm mt-1">{errors.client_passport}</p>
                   )}
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Passport Expiry Date *</label>
                   <input
@@ -793,7 +862,7 @@ export default function NewCasePage() {
                     <p className="text-red-500 text-sm mt-1">{errors.passport_expiry_date}</p>
                   )}
                 </div>
-              </div>
+              </>
             )}
 
             {formData.id_type === 'others' && (
@@ -862,6 +931,22 @@ export default function NewCasePage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+    )
+  }
+
+  const renderStep3_CoBorrowers = () => {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Co-Borrowers</h2>
+          <p className="text-gray-600 mt-1">Add any co-borrowers or joint applicants (optional)</p>
+        </div>
+
+        <CoBorrowerManager
+          coBorrowers={formData.co_borrowers}
+          onChange={(coBorrowers) => handleInputChange('co_borrowers', coBorrowers)}
+        />
       </div>
     )
   }

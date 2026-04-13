@@ -54,9 +54,12 @@ export function CoBorrowerManager({ coBorrowers, onChange }: CoBorrowerManagerPr
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
 
   const addCoBorrower = () => {
-    const newCoBorrowers = [...coBorrowers, { ...emptyCoBorrower }]
-    onChange(newCoBorrowers)
-    setExpandedIndex(newCoBorrowers.length - 1) // Auto-expand the new one
+    if (coBorrowers.length >= 1) {
+      alert('Maximum 1 co-borrower allowed per case')
+      return
+    }
+    onChange([...coBorrowers, { ...emptyCoBorrower }])
+    setExpandedIndex(coBorrowers.length)
   }
 
   const removeCoBorrower = (index: number) => {
