@@ -269,6 +269,16 @@ interface CaseFormData {
   valuer_info: ValuerInfo | null
   lawyer_info: LawyerInfo | null
   notes: string
+  // Lawyer Selection (Step 4)
+  selected_lawyer_type: 'panel' | 'others' | ''
+  lawyer_id: string
+  lawyer_professional_fee: string
+  has_special_arrangement: boolean
+  special_arrangement_discount: string
+  lawyer_name_other: string
+  lawyer_firm_other: string
+  lawyer_contact_other: string
+  lawyer_email_other: string
 }
 
 const initialForm: CaseFormData = {
@@ -376,7 +386,17 @@ const initialForm: CaseFormData = {
   co_borrowers: [],
   valuer_info: null,
   lawyer_info: null,
-  notes: ''
+  notes: '',
+  // Lawyer Selection (Step 4)
+  selected_lawyer_type: '',
+  lawyer_id: '',
+  lawyer_professional_fee: '',
+  has_special_arrangement: false,
+  special_arrangement_discount: '',
+  lawyer_name_other: '',
+  lawyer_firm_other: '',
+  lawyer_contact_other: '',
+  lawyer_email_other: ''
 }
 
 const formatTenureFromMonths = (months: number | null): string => {
@@ -398,9 +418,18 @@ export default function NewCasePage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPrintView, setShowPrintView] = useState(false)
   const [savedCaseData, setSavedCaseData] = useState<any>(null)
+  
+  // Lawyer selection state
+  const [availableLawyers, setAvailableLawyers] = useState<Array<{
+    id: string
+    name: string
+    firm: string
+    email: string | null
+    phone: string | null
+  }>>([])
 
   const bankSpecificSteps = bankConfig ? getTotalSections(bankConfig) : 0
-  const totalSteps = 3 + bankSpecificSteps // Step 1: Bank, Step 2: Client, Step 3: Co-Borrowers, then bank sections
+  const totalSteps = 4 + bankSpecificSteps // Step 1: Bank, Step 2: Client, Step 3: Co-Borrowers, Step 4: Lawyer, then bank sections
 
   useEffect(() => {
     if (formData.selected_bank) {
@@ -409,6 +438,62 @@ export default function NewCasePage() {
     } else {
       setBankConfig(null)
     }
+  }, [formData.selected_bank])
+
+  // Fetch panel lawyers when bank changes
+  useEffect(() => {
+    const fetchPanelLawyers = async () => {
+      if (!formData.selected_bank) {
+        setAvailableLawyers([])
+        return
+      }
+      
+      try {
+        const supabase = createClient()
+        
+        // Get bank ID first
+        const { data: bankData } = await supabase
+          .from('banks')
+          .select('id')
+          .eq('name', formData.selected_bank)
+          .single()
+        
+        if (!bankData) {
+          setAvailableLawyers([])
+          return
+        }
+        
+        // Fetch lawyers panel for this bank via association table
+        const { data: associations } = await supabase
+          .from('lawyer_bank_associations')
+          .select('lawyer_id')
+          .eq('bank_id', bankData.id)
+          .eq('is_panel', true)
+        
+        if (!associations || associations.length === 0) {
+          setAvailableLawyers([])
+          return
+        }
+        
+        const lawyerIds = associations.map(a => a.lawyer_id)
+        
+        const { data: lawyers, error } = await supabase
+          .from('lawyers')
+          .select('id, name, firm, email, phone')
+          .in('id', lawyerIds)
+          .eq('is_active', true)
+          .order('name')
+        
+        if (error) throw error
+        
+        setAvailableLawyers(lawyers || [])
+      } catch (error) {
+        console.error('Error fetching panel lawyers:', error)
+        setAvailableLawyers([])
+      }
+    }
+    
+    fetchPanelLawyers()
   }, [formData.selected_bank])
 
   useEffect(() => {
@@ -552,9 +637,35 @@ export default function NewCasePage() {
       }
     }
 
-    // Validate dynamic bank form fields (steps 4+)
-    if (bankConfig && step > 3 && step <= 3 + bankSpecificSteps) {
-      const sectionIndex = step - 4
+    // Validate lawyer selection (Step 4)
+    if (step === 4) {
+      if (!formData.selected_lawyer_type) {
+        newErrors.selected_lawyer_type = 'Please select lawyer type'
+      }
+      
+      if (formData.selected_lawyer_type === 'panel') {
+        if (!formData.lawyer_id) {
+          newErrors.lawyer_id = 'Please select a panel lawyer'
+        }
+        if (!formData.lawyer_professional_fee || parseFloat(formData.lawyer_professional_fee) <= 0) {
+          newErrors.lawyer_professional_fee = 'Professional fee is required and must be greater than 0'
+        }
+        if (formData.has_special_arrangement && (!formData.special_arrangement_discount || parseFloat(formData.special_arrangement_discount) <= 0)) {
+          newErrors.special_arrangement_discount = 'Discount amount is required when special arrangement is checked'
+        }
+      } else if (formData.selected_lawyer_type === 'others') {
+        if (!formData.lawyer_name_other.trim()) {
+          newErrors.lawyer_name_other = 'Lawyer name is required'
+        }
+        if (!formData.lawyer_firm_other.trim()) {
+          newErrors.lawyer_firm_other = 'Law firm is required'
+        }
+      }
+    }
+
+    // Validate dynamic bank form fields (steps 5+)
+    if (bankConfig && step > 4 && step <= 4 + bankSpecificSteps) {
+      const sectionIndex = step - 5
       const section = bankConfig.sections[sectionIndex]
       
       if (section) {
@@ -743,6 +854,17 @@ export default function NewCasePage() {
           indicative_value: formData.indicative_value,
           valuation_fee_quoted: formData.valuation_fee_quoted,
           report_received: formData.report_received,
+          
+          // Lawyer Selection (Step 4)
+          selected_lawyer_type: formData.selected_lawyer_type,
+          lawyer_id: formData.lawyer_id || null,
+          lawyer_professional_fee: formData.lawyer_professional_fee ? parseFloat(formData.lawyer_professional_fee) : null,
+          has_special_arrangement: formData.has_special_arrangement,
+          special_arrangement_discount: formData.special_arrangement_discount ? parseFloat(formData.special_arrangement_discount) : null,
+          lawyer_name_other: formData.lawyer_name_other,
+          lawyer_firm_other: formData.lawyer_firm_other,
+          lawyer_contact_other: formData.lawyer_contact_other,
+          lawyer_email_other: formData.lawyer_email_other,
         }
       }
 
@@ -810,6 +932,247 @@ export default function NewCasePage() {
     }
   }
 
+  const renderStep4_LawyerSelection = () => {
+    const f = (field: keyof CaseFormData) => (value: string | boolean) => {
+      setFormData(prev => ({ ...prev, [field]: value }))
+    }
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Lawyer Selection</h2>
+          <p className="text-gray-600 mt-1">Select the handling lawyer for this case</p>
+        </div>
+
+        {/* Lawyer Type Selection */}
+        <div className="border border-[#E5E7EB] rounded-xl p-4 space-y-3">
+          <label className="text-sm font-semibold text-[#0A1628]">
+            Lawyer Type <span className="text-red-500">*</span>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                f('selected_lawyer_type')('panel')
+                // Clear non-panel fields when switching to panel
+                setFormData(prev => ({
+                  ...prev,
+                  lawyer_name_other: '',
+                  lawyer_firm_other: '',
+                  lawyer_contact_other: '',
+                  lawyer_email_other: ''
+                }))
+              }}
+              className={`py-3 px-4 rounded-lg border text-sm font-medium transition-all ${
+                formData.selected_lawyer_type === 'panel'
+                  ? 'border-[#C9A84C] bg-[#FFF9EC] text-[#0A1628]'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              <div className="font-semibold">Panel Lawyer</div>
+              <div className="text-xs text-gray-500 mt-1">Entitled to commission</div>
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                f('selected_lawyer_type')('others')
+                // Clear panel fields when switching to others
+                setFormData(prev => ({
+                  ...prev,
+                  lawyer_id: '',
+                  lawyer_professional_fee: '',
+                  has_special_arrangement: false,
+                  special_arrangement_discount: ''
+                }))
+              }}
+              className={`py-3 px-4 rounded-lg border text-sm font-medium transition-all ${
+                formData.selected_lawyer_type === 'others'
+                  ? 'border-[#C9A84C] bg-[#FFF9EC] text-[#0A1628]'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              <div className="font-semibold">Others (Non-Panel)</div>
+              <div className="text-xs text-gray-500 mt-1">No commission</div>
+            </button>
+          </div>
+        </div>
+
+        {/* Panel Lawyer Options */}
+        {formData.selected_lawyer_type === 'panel' && (
+          <div className="space-y-4">
+            {/* Select Lawyer Dropdown */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Select Panel Lawyer <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.lawyer_id}
+                onChange={(e) => f('lawyer_id')(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                required
+              >
+                <option value="">Choose a lawyer...</option>
+                {availableLawyers.map(lawyer => (
+                  <option key={lawyer.id} value={lawyer.id}>
+                    {lawyer.name} - {lawyer.firm}
+                  </option>
+                ))}
+              </select>
+              {availableLawyers.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠ No panel lawyers found for {formData.selected_bank}. Please contact admin.
+                </p>
+              )}
+            </div>
+
+            {/* Professional Fee Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Professional Fee from Quotation (RM) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.lawyer_professional_fee}
+                onChange={(e) => f('lawyer_professional_fee')(e.target.value)}
+                placeholder="e.g. 6250.00"
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter the professional fee amount from the lawyer's quotation (excluding stamp duty & disbursements)
+              </p>
+            </div>
+
+            {/* Special Arrangement Checkbox */}
+            <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="specialArrangement"
+                  checked={formData.has_special_arrangement}
+                  onChange={(e) => {
+                    f('has_special_arrangement')(e.target.checked)
+                    if (!e.target.checked) {
+                      f('special_arrangement_discount')('')
+                    }
+                  }}
+                  className="mt-1 rounded border-gray-300 text-[#C9A84C] focus:ring-[#C9A84C]"
+                />
+                <div>
+                  <label htmlFor="specialArrangement" className="text-sm font-medium text-gray-700">
+                    Special Arrangement - Did the lawyer give any discount to the client?
+                  </label>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    This discount will be deducted from the professional fee for commission calculation
+                  </p>
+                </div>
+              </div>
+              
+              {formData.has_special_arrangement && (
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Discount Amount (RM) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.special_arrangement_discount}
+                    onChange={(e) => f('special_arrangement_discount')(e.target.value)}
+                    placeholder="e.g. 500.00"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                    required
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Non-Panel Lawyer Details */}
+        {formData.selected_lawyer_type === 'others' && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm text-amber-800">
+                ⚠ External/non-panel lawyers do not generate commission for agents
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lawyer Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.lawyer_name_other}
+                  onChange={(e) => f('lawyer_name_other')(e.target.value)}
+                  placeholder="e.g. Tan Ah Kow"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Law Firm <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.lawyer_firm_other}
+                  onChange={(e) => f('lawyer_firm_other')(e.target.value)}
+                  placeholder="e.g. Tan & Partners"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contact Number
+                </label>
+                <input
+                  type="tel"
+                  value={formData.lawyer_contact_other}
+                  onChange={(e) => f('lawyer_contact_other')(e.target.value)}
+                  placeholder="+601X-XXXXXXX"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={formData.lawyer_email_other}
+                  onChange={(e) => f('lawyer_email_other')(e.target.value)}
+                  placeholder="lawyer@firm.com"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Help Text */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-blue-900 mb-2">💡 Important Notes:</h4>
+          <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+            <li>Professional fee is used for commission calculation</li>
+            <li>Special arrangement discount reduces the commissionable amount</li>
+            <li>You can upload the actual quotation PDF later when submitting the case</li>
+            <li>Admin may adjust these figures after case acceptance if needed</li>
+          </ul>
+        </div>
+      </div>
+    )
+  }
+
   const renderCurrentStep = () => {
     if (showPrintView && savedCaseData) {
       return (
@@ -830,9 +1193,11 @@ export default function NewCasePage() {
         return renderStep2_ClientInfo()
       case 3:
         return renderStep3_CoBorrowers()
+      case 4:
+        return renderStep4_LawyerSelection()
       default:
-        if (bankConfig && currentStep > 3 && currentStep <= 3 + bankSpecificSteps) {
-          const sectionIndex = currentStep - 4
+        if (bankConfig && currentStep > 4 && currentStep <= 4 + bankSpecificSteps) {
+          const sectionIndex = currentStep - 5
           const section = bankConfig.sections[sectionIndex]
           if (section) {
             return (
