@@ -8,5 +8,10 @@
       "url": "http://localhost:3000",
       "description": "QAI Portal — Next.js 16.2.3 with Turbopack"
     }
-  ]
+  ],
+  "git": {
+    "repository": "https://github.com/gorillago3318/qaiportal",
+    "branch": "main",
+    "note": "This is the ONLY git repository for this project. All changes should be pushed here."
+  }
 }
