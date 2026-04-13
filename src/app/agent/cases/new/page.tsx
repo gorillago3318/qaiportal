@@ -406,17 +406,14 @@ export default function NewCasePage() {
         facility_amount: calc.proposed_loan_amount?.toString() || calc.loan_amount?.toString() || '',
         loan_tenure: calc.tenure_years || formatTenureFromMonths(calc.proposed_tenure_months) || '',
         interest_rate: calc.proposed_interest_rate?.toString() || calc.interest_rate?.toString() || '',
-        property_owner_names: calc.property_owner_names || calc.client_name || '',
         property_address: calc.property_address || '',
-        property_postcode: calc.property_postcode || '',
+        property_post_code: calc.property_postcode || '',
         property_type: calc.property_type || '',
-        buildup_area: calc.buildup_area || calc.property_size_buildup?.toString() || '',
-        land_area: calc.land_area || calc.property_size_land?.toString() || '',
-        purchase_price_market_value: calc.purchase_price || calc.property_value?.toString() || '',
-        type_of_purchase: calc.type_of_purchase || '',
+        buildup_size_sqft: calc.buildup_area || calc.property_size_buildup?.toString() || '',
+        land_size_sqft: calc.land_area || calc.property_size_land?.toString() || '',
+        purchase_price: calc.purchase_price || calc.property_value?.toString() || '',
         title_type: calc.title_type || '',
-        land_type: calc.land_type || calc.property_tenure || '',
-        finance_legal_fees: calc.finance_legal_fees,
+        land_tenure: calc.land_type || calc.property_tenure || '',
         notes: calc.finance_legal_fees ? 'Legal fees financed by bank' : ''
       }
 
@@ -439,7 +436,7 @@ export default function NewCasePage() {
     }
   }
 
-  const handleDynamicFormChange = (sectionId: string, fieldId: string, value: any) => {
+  const handleDynamicFormChange = (fieldId: string, value: any) => {
     setFormData(prev => ({ ...prev, [fieldId]: value }))
   }
 
@@ -539,14 +536,13 @@ export default function NewCasePage() {
         proposed_tenure_months: parseInt(formData.loan_tenure) * 12 || 0,
         proposed_interest_rate: parseFloat(formData.interest_rate) || 0,
         property_address: formData.property_address,
-        property_postcode: formData.property_postcode,
+        property_post_code: formData.property_post_code,
         property_type: formData.property_type,
-        property_size_buildup: parseFloat(formData.buildup_area) || null,
-        property_size_land: parseFloat(formData.land_area) || null,
-        property_value: parseFloat(formData.purchase_price_market_value) || 0,
-        type_of_purchase: formData.type_of_purchase,
+        property_size_buildup: parseFloat(formData.buildup_size_sqft) || null,
+        property_size_land: parseFloat(formData.land_size_sqft) || null,
+        property_value: parseFloat(formData.purchase_price) || 0,
         title_type: formData.title_type,
-        property_tenure: formData.land_type,
+        property_tenure: formData.land_tenure,
         notes: formData.notes,
         status: 'draft'
       }
@@ -617,10 +613,10 @@ export default function NewCasePage() {
                   <CardContent className="p-6">
                     <DynamicBankForm
                       config={bankConfig}
-                      sectionId={section.id}
                       formData={formData}
                       onChange={handleDynamicFormChange}
                       errors={errors}
+                      currentSectionIndex={sectionIndex}
                     />
                   </CardContent>
                 </Card>
@@ -650,17 +646,17 @@ export default function NewCasePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {SUPPORTED_BANKS.map((bank) => (
                 <button
-                  key={bank.bankId}
-                  onClick={() => handleInputChange('selected_bank', bank.bankId)}
+                  key={bank.id}
+                  onClick={() => handleInputChange('selected_bank', bank.id)}
                   className={cn(
                     "p-6 border-2 rounded-lg transition-all text-left",
-                    formData.selected_bank === bank.bankId
+                    formData.selected_bank === bank.id
                       ? "border-blue-500 bg-blue-50"
                       : "border-gray-200 hover:border-gray-300"
                   )}
                 >
-                  <h3 className="font-semibold text-lg">{bank.bankName}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{bank.description}</p>
+                  <h3 className="font-semibold text-lg">{bank.name}</h3>
+                  <p className="text-sm text-gray-600 mt-1 capitalize">{bank.id.replace(/_/g, ' ')}</p>
                 </button>
               ))}
             </div>
