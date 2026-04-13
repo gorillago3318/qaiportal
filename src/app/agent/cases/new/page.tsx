@@ -639,7 +639,16 @@ export default function NewCasePage() {
       }
 
       setSavedCaseData(data)
-      setShowPrintView(true)
+      
+      // Only show print view if user clicked "Render to PDF" or "Submit Case" from final step
+      // Don't auto-show on "Save as Draft"
+      if (currentStep === totalSteps) {
+        setShowPrintView(true)
+      } else {
+        // Show success message and redirect to cases list for draft saves
+        alert('✅ Case saved as draft successfully! You can find it in your Cases list.')
+        router.push('/agent/cases')
+      }
     } catch (error) {
       console.error('Error saving case:', error)
       alert('Failed to save case. Please try again.')
@@ -850,9 +859,14 @@ export default function NewCasePage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Passport Expiry Date *</label>
                   <input
-                    type="date"
-                    value={formData.passport_expiry_date}
-                    onChange={(e) => handleInputChange('passport_expiry_date', e.target.value)}
+                    type="text"
+                    value={formatDateForDisplay(formData.passport_expiry_date)}
+                    onChange={(e) => {
+                      const displayValue = e.target.value
+                      const isoDate = formatDateToYYYYMMDD(displayValue)
+                      handleInputChange('passport_expiry_date', isoDate)
+                    }}
+                    placeholder="DD/MM/YYYY"
                     className={cn(
                       "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
                       errors.passport_expiry_date && "border-red-500"
@@ -888,9 +902,14 @@ export default function NewCasePage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
                 <input
-                  type="date"
-                  value={formData.client_dob}
-                  onChange={(e) => handleInputChange('client_dob', e.target.value)}
+                  type="text"
+                  value={formatDateForDisplay(formData.client_dob)}
+                  onChange={(e) => {
+                    const displayValue = e.target.value
+                    const isoDate = formatDateToYYYYMMDD(displayValue)
+                    handleInputChange('client_dob', isoDate)
+                  }}
+                  placeholder="DD/MM/YYYY"
                   className={cn(
                     "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
                     errors.client_dob && "border-red-500"
@@ -1046,21 +1065,23 @@ export default function NewCasePage() {
         {renderCurrentStep()}
 
         {!showPrintView && (
-          <div className="mt-8 flex justify-between">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentStep === 1 || isLoading}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Previous
-            </Button>
-            
-            {currentStep === totalSteps ? (
+          <div className="mt-8 flex justify-between items-center">
+            <div className="flex gap-3">
               <Button
+                variant="outline"
+                onClick={handlePrevious}
+                disabled={currentStep === 1 || isLoading}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Previous
+              </Button>
+              
+              {/* Save as Draft Button - Available at any step */}
+              <Button
+                variant="outline"
                 onClick={handleSubmit}
                 disabled={isLoading}
-                className="bg-green-600 hover:bg-green-700"
+                className="border-blue-600 text-blue-600 hover:bg-blue-50"
               >
                 {isLoading ? (
                   <>
@@ -1069,17 +1090,51 @@ export default function NewCasePage() {
                   </>
                 ) : (
                   <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Submit Case
+                    <Save className="h-4 w-4 mr-2" />
+                    Save as Draft
                   </>
                 )}
               </Button>
-            ) : (
-              <Button onClick={handleNext} disabled={isLoading}>
-                Next
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            )}
+            </div>
+            
+            <div className="flex gap-3">
+              {/* Render to PDF Button - Only show if we have saved case data */}
+              {savedCaseData && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPrintView(true)}
+                  className="border-purple-600 text-purple-600 hover:bg-purple-50"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Render to PDF
+                </Button>
+              )}
+              
+              {currentStep === totalSteps ? (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={isLoading}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Submit Case
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button onClick={handleNext} disabled={isLoading}>
+                  Next
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>
