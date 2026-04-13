@@ -549,7 +549,7 @@ export default function NewCasePage() {
 
       const { data, error } = await supabase
         .from('cases')
-        .insert([caseData])
+        .insert([caseData as any])
         .select()
         .single()
 
@@ -558,8 +558,7 @@ export default function NewCasePage() {
       if (calculationId) {
         await supabase
           .from('calculations')
-          .update({ case_id: data.id })
-          .eq('id', calculationId)
+          .update({ case_id: (data as any).id })
       }
 
       setSavedCaseData(data)
