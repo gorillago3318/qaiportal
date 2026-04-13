@@ -552,6 +552,40 @@ export default function NewCasePage() {
       }
     }
 
+    // Validate dynamic bank form fields (steps 4+)
+    if (bankConfig && step > 3 && step <= 3 + bankSpecificSteps) {
+      const sectionIndex = step - 4
+      const section = bankConfig.sections[sectionIndex]
+      
+      if (section) {
+        section.fields.forEach(field => {
+          if (field.required) {
+            // Check if field has conditional logic and should be visible
+            let shouldValidate = true
+            
+            if (field.conditional) {
+              if (field.conditional.custom_logic) {
+                shouldValidate = field.conditional.custom_logic(formData)
+              } else if (field.conditional.not_equals !== undefined) {
+                shouldValidate = formData[field.conditional.field] !== field.conditional.not_equals
+              } else if (field.conditional.equals !== undefined) {
+                shouldValidate = formData[field.conditional.field] === field.conditional.equals
+              }
+            }
+            
+            // Only validate if field should be visible
+            if (shouldValidate) {
+              const value = formData[field.id]
+              
+              if (!value || (typeof value === 'string' && !value.trim())) {
+                newErrors[field.id] = `${field.label} is required`
+              }
+            }
+          }
+        })
+      }
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -567,6 +601,20 @@ export default function NewCasePage() {
   }
 
   const handleSubmit = async () => {
+    // Validate all steps before submitting
+    let hasErrors = false
+    for (let step = 1; step <= totalSteps; step++) {
+      if (!validateStep(step)) {
+        hasErrors = true
+      }
+    }
+    
+    if (hasErrors) {
+      alert('❌ Please fill in all required fields before submitting.')
+      setIsLoading(false)
+      return
+    }
+    
     setIsLoading(true)
     try {
       const supabase = createClient()
@@ -624,13 +672,30 @@ export default function NewCasePage() {
         status: 'draft'
       }
 
+      // Debug: Log the data being sent
+      console.log('Attempting to save case with data:', {
+        agent_id: caseData.agent_id,
+        selected_bank: caseData.selected_bank,
+        client_name: caseData.client_name,
+        status: caseData.status,
+        total_fields: Object.keys(caseData).length
+      })
+
       const { data, error } = await supabase
         .from('cases')
         .insert([caseData as any])
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
+        throw error
+      }
 
       if (calculationId) {
         await supabase
@@ -649,9 +714,23 @@ export default function NewCasePage() {
         alert('✅ Case saved as draft successfully! You can find it in your Cases list.')
         router.push('/agent/cases')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving case:', error)
-      alert('Failed to save case. Please try again.')
+      
+      // Extract meaningful error message
+      let errorMessage = 'Failed to save case. Please try again.'
+      
+      if (error.message) {
+        errorMessage = error.message
+      } else if (error.details) {
+        errorMessage = error.details
+      } else if (error.hint) {
+        errorMessage = error.hint
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      }
+      
+      alert(`❌ Error: ${errorMessage}`)
     } finally {
       setIsLoading(false)
     }
