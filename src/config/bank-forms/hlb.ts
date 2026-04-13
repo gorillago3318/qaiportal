@@ -475,10 +475,15 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'facility_tenure_months',
-          label: 'Tenure (Months)',
+          label: 'Tenure',
           type: 'number',
           required: true,
-          gridColumn: 1
+          placeholder: 'Enter in months (e.g., 60 for 5 years)',
+          gridColumn: 1,
+          validation: {
+            min: 12,
+            max: 420 // 35 years max
+          }
         },
         {
           id: 'finance_legal_cost',
@@ -493,9 +498,10 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'legal_cost_amount',
-          label: 'Legal Cost Amount (RM)',
+          label: 'Legal Cost Amount (RM) - Quotation Required',
           type: 'currency',
-          required: false,
+          required: true,
+          placeholder: 'Enter quoted legal cost amount',
           conditional: { field: 'finance_legal_cost', equals: 'yes' },
           gridColumn: 1
         },
@@ -512,9 +518,10 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'valuation_cost_amount',
-          label: 'Valuation Cost Amount (RM)',
+          label: 'Valuation Cost Amount (RM) - Quotation Required',
           type: 'currency',
-          required: false,
+          required: true,
+          placeholder: 'Enter quoted valuation cost amount',
           conditional: { field: 'finance_valuation_cost', equals: 'yes' },
           gridColumn: 1
         },
