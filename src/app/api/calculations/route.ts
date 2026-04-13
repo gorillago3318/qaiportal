@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { getAdminClient, getCallerProfile } from "@/lib/supabase/admin"
 import { randomUUID } from "crypto"
 
 export async function POST(request: NextRequest) {
@@ -48,10 +49,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const callerProfile = await getCallerProfile(user.id)
     const report_token = randomUUID()
 
     const insertPayload = {
       agent_id: user.id,
+      agency_id: callerProfile?.agency_id || null,
       client_name,
       client_ic: client_ic || null,
       client_phone: client_phone || null,
@@ -78,10 +81,12 @@ export async function POST(request: NextRequest) {
       referral_code: referral_code || null,
     }
 
+    // Use admin client to bypass RLS on insert
+    const adminClient = getAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await supabase
+    const { data, error } = await (adminClient as any)
       .from("calculations")
-      .insert(insertPayload as any)
+      .insert(insertPayload)
       .select("id, report_token")
       .single()
 

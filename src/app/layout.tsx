@@ -1,20 +1,12 @@
 import type { Metadata } from "next"
-import { DM_Sans, Playfair_Display } from "next/font/google"
+import { Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 
-const dmSans = DM_Sans({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-dm-sans",
+  variable: "--font-inter",
   weight: ["300", "400", "500", "600", "700"],
-  display: "swap",
-})
-
-const playfairDisplay = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-playfair",
-  weight: ["400", "600", "700"],
-  style: ["normal", "italic"],
   display: "swap",
 })
 
@@ -50,12 +42,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${dmSans.variable} ${playfairDisplay.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body
-        className="h-full font-sans bg-[#F8F9FA] text-[#0A1628]"
-        style={{ fontFamily: "var(--font-dm-sans, 'DM Sans', system-ui, sans-serif)" }}
+        className="h-full font-sans bg-[#f6f6f7] text-[#111113]"
+        style={{ fontFamily: "var(--font-inter, 'Inter', system-ui, sans-serif)" }}
       >
         {children}
         <Toaster />

@@ -20,6 +20,8 @@ const badgeVariants = cva(
         declined: "bg-[#FEF2F2] text-[#991B1B]",
         accepted: "bg-[#D1FAE5] text-[#064E3B]",
         rejected: "bg-[#FFF1F2] text-[#9F1239]",
+        pending_execution: "bg-[#E0E7FF] text-[#3730A3]",
+        executed: "bg-[#CFFAFE] text-[#0E7490]",
         payment_pending: "bg-[#FFF7ED] text-[#C2410C]",
         paid: "bg-[#F0FDFA] text-[#0F766E]",
         // Loan types
@@ -30,8 +32,8 @@ const badgeVariants = cva(
         pending: "bg-[#F3F4F6] text-[#6B7280]",
         calculated: "bg-[#EFF6FF] text-[#1D4ED8]",
         // Roles
-        gold: "bg-[#FEF3C7] text-[#92400E]",
-        navy: "bg-[#EEF1F7] text-[#0A1628]",
+        gold: "bg-[#E0F0FF] text-[#003D7A]",
+        navy: "bg-[#F5F5F7] text-[#1D1D1F]",
       },
     },
     defaultVariants: {
@@ -61,6 +63,8 @@ export function CaseStatusBadge({ status }: { status: CaseStatus }) {
     declined: "Declined",
     accepted: "Accepted",
     rejected: "Rejected",
+    pending_execution: "Pending Execution",
+    executed: "Executed",
     payment_pending: "Payment Pending",
     paid: "Paid",
   }

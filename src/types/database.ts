@@ -17,6 +17,8 @@ export type CaseStatus =
   | 'declined'
   | 'accepted'
   | 'rejected'
+  | 'pending_execution'
+  | 'executed'
   | 'payment_pending'
   | 'paid'
 
@@ -55,6 +57,9 @@ export interface Database {
           agent_code: string | null
           upline_id: string | null
           is_active: boolean
+          bank_name: string | null
+          bank_account_number: string | null
+          bank_account_name: string | null
           created_at: string
           updated_at: string
         }
@@ -85,6 +90,7 @@ export interface Database {
           id: string
           name: string
           commission_rate: number
+          interest_rate: number | null
           is_active: boolean
           created_at: string
           updated_at: string
@@ -217,8 +223,19 @@ export interface Database {
           lawyer_case_types: LawyerCaseType[]
           lawyer_professional_fee: number | null
           lawyer_discount: number | null
+          has_lawyer_discount: boolean
+          lawyer_discount_amount: number | null
+          lawyer_quotation_url: string | null
           valuer_name: string | null
           valuer_firm: string | null
+          valuer_1_firm: string | null
+          valuer_1_name: string | null
+          valuer_1_date: string | null
+          valuer_1_amount: number | null
+          valuer_2_firm: string | null
+          valuer_2_name: string | null
+          valuer_2_date: string | null
+          valuer_2_amount: number | null
           finance_legal_fees: boolean
           legal_fee_amount: number | null
           valuation_fee_amount: number | null
@@ -334,6 +351,7 @@ export interface Database {
           paid_amount: number | null
           paid_at: string | null
           payment_reference: string | null
+          commission_notes: string | null
           created_at: string
           updated_at: string
         }
@@ -425,6 +443,8 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   declined: 'Declined',
   accepted: 'Accepted',
   rejected: 'Rejected',
+  pending_execution: 'Pending Execution',
+  executed: 'Executed',
   payment_pending: 'Payment Pending',
   paid: 'Paid',
 }

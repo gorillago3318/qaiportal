@@ -29,23 +29,22 @@ export function CurrencyInput({
   id,
 }: CurrencyInputProps) {
   const [displayValue, setDisplayValue] = React.useState<string>("")
+  const isFocused = React.useRef(false)
   const inputId = id || React.useId()
 
-  // Sync display value when value prop changes externally
+  // Sync display value when value prop changes externally — skip while user is typing
   React.useEffect(() => {
+    if (isFocused.current) return
     if (value === undefined || value === 0) {
       setDisplayValue("")
     } else {
-      // Format with commas but no decimal for display while not focused
       setDisplayValue(value.toLocaleString("en-MY", { maximumFractionDigits: 2 }))
     }
   }, [value])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
-    // Allow digits, commas, decimal point only
     const cleaned = raw.replace(/[^0-9.,]/g, "")
-    // Remove commas for parsing
     const numeric = parseFloat(cleaned.replace(/,/g, ""))
     setDisplayValue(cleaned)
     if (cleaned === "" || cleaned === ".") {
@@ -56,14 +55,15 @@ export function CurrencyInput({
   }
 
   const handleFocus = () => {
-    // Show raw number when focused
+    isFocused.current = true
+    // Show raw number on focus so cursor works correctly
     if (value !== undefined && value !== 0) {
       setDisplayValue(value.toString())
     }
   }
 
   const handleBlur = () => {
-    // Format nicely on blur
+    isFocused.current = false
     if (value !== undefined && value > 0) {
       setDisplayValue(value.toLocaleString("en-MY", { maximumFractionDigits: 2 }))
     } else {

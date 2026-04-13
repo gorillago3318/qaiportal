@@ -22,8 +22,9 @@ export default function AgentLayout({
   const [userEmail, setUserEmail] = React.useState<string>("")
 
   React.useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabase = createClient() as any
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: { id: string; email?: string } | null } }) => {
       if (!user) {
         router.push("/login")
         return
@@ -31,11 +32,25 @@ export default function AgentLayout({
       setUserEmail(user.email || "")
       supabase
         .from("profiles")
-        .select("full_name")
+        .select("full_name, role, must_change_password, agreement_signed_at")
         .eq("id", user.id)
         .single()
-        .then(({ data }) => {
-          if (data) setUserName((data as { full_name: string }).full_name)
+        .then(({ data }: { data: { full_name: string; role: string; must_change_password: boolean; agreement_signed_at: string | null } | null }) => {
+          if (!data) return
+          setUserName(data.full_name)
+          // Redirect admins away from agent portal
+          if (["super_admin", "admin"].includes(data.role)) {
+            router.push("/admin/dashboard")
+            return
+          }
+          // Enforce onboarding flow
+          if (data.must_change_password) {
+            router.push("/onboarding/change-password")
+            return
+          }
+          if (!data.agreement_signed_at) {
+            router.push("/onboarding/agreement")
+          }
         })
     })
   }, [router])

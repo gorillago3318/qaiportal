@@ -1,0 +1,12 @@
+{
+  "servers": [
+    {
+      "name": "Next.js Dev Server",
+      "command": "npm run dev",
+      "cwd": "C:\\Users\\waiki\\OneDrive\\Desktop\\QuantifyAI\\qaiportal",
+      "port": 3000,
+      "url": "http://localhost:3000",
+      "description": "QAI Portal — Next.js 16.2.3 with Turbopack"
+    }
+  ]
+}

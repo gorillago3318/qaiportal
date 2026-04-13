@@ -29,6 +29,8 @@ const STATUS_COLORS: Record<string, string> = {
   declined: "bg-red-100 text-red-700",
   accepted: "bg-emerald-100 text-emerald-700",
   rejected: "bg-red-100 text-red-700",
+  pending_execution: "bg-indigo-100 text-indigo-700",
+  executed: "bg-cyan-100 text-cyan-700",
   payment_pending: "bg-orange-100 text-orange-700",
   paid: "bg-green-100 text-green-800",
 }
@@ -42,6 +44,8 @@ const STATUS_LABELS: Record<string, string> = {
   declined: "Declined",
   accepted: "Accepted",
   rejected: "Rejected",
+  pending_execution: "Pending Execution",
+  executed: "Executed",
   payment_pending: "Payment Pending",
   paid: "Paid",
 }
@@ -63,6 +67,16 @@ interface CaseStatusCount {
   count: number
 }
 
+interface AppNotification {
+  id: string
+  title: string
+  message: string
+  type: string
+  case_id: string | null
+  is_read: boolean
+  created_at: string
+}
+
 function StatCard({
   label,
   value,
@@ -82,17 +96,17 @@ function StatCard({
 }) {
   return (
     <Link href={href}>
-      <Card className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-[#C9A84C] h-full">
+      <Card className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-[#D7263D] h-full">
         <CardContent className="pt-5 pb-5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+              <p className="text-xs font-medium text-[#5F5F67] uppercase tracking-wider mb-1">
                 {label}
               </p>
               {loading ? (
                 <Skeleton className="h-8 w-20 mt-1" />
               ) : (
-                <p className="text-2xl font-bold text-[#0A1628] font-heading">
+                <p className="text-2xl font-bold text-[#17171A] font-heading">
                   {value}
                 </p>
               )}
@@ -115,6 +129,7 @@ export default function AgentDashboardPage() {
   const [totalCases, setTotalCases] = React.useState(0)
   const [activeCases, setActiveCases] = React.useState(0)
   const [paidCommissions, setPaidCommissions] = React.useState(0)
+  const [notifications, setNotifications] = React.useState<AppNotification[]>([])
   const [loading, setLoading] = React.useState(true)
 
   const today = new Date().toLocaleDateString("en-MY", {
@@ -200,6 +215,15 @@ export default function AgentDashboardPage() {
 
       if (calcsData) setRecentCalcs(calcsData as Calculation[])
 
+      // Fetch notifications
+      const { data: notifData } = await supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(5)
+
+      if (notifData) setNotifications(notifData as AppNotification[])
+
       setLoading(false)
     }
 
@@ -220,10 +244,10 @@ export default function AgentDashboardPage() {
             </>
           ) : (
             <>
-              <h1 className="font-heading text-2xl font-bold text-[#0A1628]">
+              <h1 className="font-heading text-2xl font-bold text-[#17171A]">
                 Welcome back, {firstName}!
               </h1>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-[#5F5F67] mt-1">
                 {profile?.role?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                 {profile?.agent_code && ` · ${profile.agent_code}`}
               </p>
@@ -231,7 +255,7 @@ export default function AgentDashboardPage() {
           )}
         </div>
         <div className="text-right hidden sm:block">
-          <p className="text-sm text-gray-500">{today}</p>
+          <p className="text-sm text-[#5F5F67]">{today}</p>
         </div>
       </div>
 
@@ -251,7 +275,7 @@ export default function AgentDashboardPage() {
           value={activeCases}
           icon={TrendingUp}
           iconBg="bg-amber-50"
-          iconColor="text-[#C9A84C]"
+          iconColor="text-[#D7263D]"
           href="/agent/cases"
           loading={loading}
         />
@@ -284,7 +308,7 @@ export default function AgentDashboardPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="font-heading text-base">Recent Calculations</CardTitle>
                 <Button variant="ghost" size="sm" asChild>
-                  <Link href="/agent/calculations" className="text-[#C9A84C] hover:text-[#B8912A] text-xs">
+                  <Link href="/agent/calculations" className="text-[#D7263D] hover:text-[#B61F33] text-xs">
                     View all <ArrowRight className="h-3 w-3 ml-1" />
                   </Link>
                 </Button>
@@ -300,9 +324,9 @@ export default function AgentDashboardPage() {
               ) : recentCalcs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-center">
                   <div className="h-14 w-14 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
-                    <Calculator className="h-7 w-7 text-gray-300" />
+                    <Calculator className="h-7 w-7 text-[#6B6B73]" />
                   </div>
-                  <p className="text-sm text-gray-500">No calculations yet</p>
+                  <p className="text-sm text-[#5F5F67]">No calculations yet</p>
                   <Button variant="gold" size="sm" className="mt-3" asChild>
                     <Link href="/agent/calculations/new">
                       <Plus className="h-3 w-3" />
@@ -314,29 +338,29 @@ export default function AgentDashboardPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">Client</th>
-                        <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">Type</th>
-                        <th className="text-right text-xs font-medium text-gray-500 pb-2 pr-3">Est. Saving</th>
-                        <th className="text-right text-xs font-medium text-gray-500 pb-2 pr-3">Date</th>
-                        <th className="text-right text-xs font-medium text-gray-500 pb-2">Action</th>
+                      <tr className="border-b border-[#E3E3E7]">
+                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3">Client</th>
+                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3">Type</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Est. Saving</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Date</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-[#ECECF0]">
                       {recentCalcs.map((calc) => {
                         const results = calc.results as Record<string, number> | null
                         const monthlySavings = results?.monthlySavings ?? 0
                         return (
-                          <tr key={calc.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={calc.id} className="hover:bg-[#F5F5F8] transition-colors">
                             <td className="py-3 pr-3">
-                              <p className="font-medium text-[#0A1628] truncate max-w-[120px]">
+                              <p className="font-medium text-[#17171A] truncate max-w-[120px]">
                                 {calc.client_name}
                               </p>
                             </td>
                             <td className="py-3 pr-3">
                               <span className={cn(
                                 "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
-                                LOAN_TYPE_COLORS[calc.loan_type] || "bg-gray-50 text-gray-600 border-gray-200"
+                                LOAN_TYPE_COLORS[calc.loan_type] || "bg-[#F3F3F6] text-[#4D4D56] border-[#DFDFE4]"
                               )}>
                                 {LOAN_TYPE_LABELS[calc.loan_type] || calc.loan_type}
                               </span>
@@ -347,10 +371,10 @@ export default function AgentDashboardPage() {
                                   +{formatCurrency(monthlySavings)}/mo
                                 </span>
                               ) : (
-                                <span className="text-gray-400">—</span>
+                                <span className="text-zinc-400">—</span>
                               )}
                             </td>
-                            <td className="py-3 pr-3 text-right text-gray-500">
+                            <td className="py-3 pr-3 text-right text-[#5F5F67]">
                               {formatDate(calc.created_at)}
                             </td>
                             <td className="py-3 text-right">
@@ -391,12 +415,56 @@ export default function AgentDashboardPage() {
                   Submit New Case
                 </Link>
               </Button>
-              <Button variant="ghost" size="lg" className="w-full justify-start gap-3 text-[#0A1628]" asChild>
+              <Button variant="ghost" size="lg" className="w-full justify-start gap-3 text-[#17171A]" asChild>
                 <Link href="/agent/cases">
                   <FolderOpen className="h-5 w-5" />
                   View My Cases
                 </Link>
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Notifications Card */}
+          <Card className="h-full mt-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-heading text-base flex justify-between items-center">
+                Notifications
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="space-y-2">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : notifications.length === 0 ? (
+                <p className="text-sm text-[#5F5F67] text-center py-4">You have no new notifications.</p>
+              ) : (
+                <div className="space-y-4">
+                  {notifications.map((n) => (
+                    <div key={n.id} className="border-b border-[#ECECF0] pb-3 last:border-0 last:pb-0">
+                      <div className="flex justify-between items-start mb-1">
+                        <p className={cn("text-sm font-semibold", n.is_read ? "text-[#5F5F67]" : "text-[#17171A]")}>
+                          {n.title}
+                        </p>
+                        <span className="text-[10px] text-zinc-400 ml-2 whitespace-nowrap">
+                          {formatDate(n.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#5F5F67] line-clamp-2">{n.message}</p>
+                      {n.case_id && (
+                        <Link href={`/agent/cases/${n.case_id}`} className="text-[11px] text-[#D7263D] hover:underline mt-1 inline-block font-medium">
+                          View Case &rarr;
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -415,7 +483,7 @@ export default function AgentDashboardPage() {
               ))}
             </div>
           ) : caseStatusCounts.length === 0 ? (
-            <p className="text-sm text-gray-400">No cases yet. Submit your first case to see status breakdown.</p>
+            <p className="text-sm text-[#5F5F67]">No cases yet. Submit your first case to see status breakdown.</p>
           ) : (
             <div className="flex gap-3 flex-wrap">
               {(["draft", "submitted", "bank_processing", "kiv", "approved", "paid"] as CaseStatus[]).map((status) => {

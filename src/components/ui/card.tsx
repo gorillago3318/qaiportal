@@ -11,12 +11,10 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-xl bg-white",
-      bordered && "border border-[#E5E7EB]",
-      elevated
-        ? "shadow-[0_4px_6px_-1px_rgba(10,22,40,0.08),0_2px_4px_-2px_rgba(10,22,40,0.04)]"
-        : "shadow-[0_1px_3px_0_rgba(10,22,40,0.06),0_1px_2px_-1px_rgba(10,22,40,0.04)]",
-      "transition-shadow duration-200",
+      "rounded-xl",
+      (elevated ? "card-elevated" : "glass"),
+      (!elevated && bordered && "border border-border/50"),
+      "transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)]",
       className
     )}
     {...props}
@@ -43,7 +41,7 @@ const CardTitle = React.forwardRef<
   <h3
     ref={ref}
     className={cn(
-      "font-heading text-lg font-semibold leading-none tracking-tight text-[#0A1628]",
+      "font-heading text-lg font-semibold leading-tight tracking-tight text-foreground",
       className
     )}
     {...props}
@@ -57,7 +55,7 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm text-[#6B7280]", className)}
+    className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
 ))
@@ -78,7 +76,7 @@ const CardFooter = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "flex items-center p-6 pt-0 border-t border-[#E5E7EB] mt-4",
+      "flex items-center p-6 pt-0 border-t border-border/50 mt-4",
       className
     )}
     {...props}

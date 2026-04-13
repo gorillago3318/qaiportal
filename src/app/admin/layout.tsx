@@ -20,10 +20,12 @@ export default function AdminLayout({
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [userName, setUserName] = React.useState<string>("")
   const [userEmail, setUserEmail] = React.useState<string>("")
+  const [isSuperAdmin, setIsSuperAdmin] = React.useState(false)
 
   React.useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabase = createClient() as any
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: { id: string; email?: string } | null } }) => {
       if (!user) {
         router.push("/login")
         return
@@ -31,16 +33,25 @@ export default function AdminLayout({
       setUserEmail(user.email || "")
       supabase
         .from("profiles")
-        .select("full_name, role")
+        .select("full_name, role, must_change_password, agreement_signed_at")
         .eq("id", user.id)
         .single()
-        .then(({ data }) => {
+        .then(({ data }: { data: { full_name: string; role: string; must_change_password: boolean; agreement_signed_at: string | null } | null }) => {
           if (!data) return
-          const profile = data as { full_name: string; role: string }
-          setUserName(profile.full_name)
+          setUserName(data.full_name)
+          setIsSuperAdmin(data.role === "super_admin")
           // Ensure only admins can access admin portal
-          if (!["super_admin", "admin"].includes(profile.role)) {
+          if (!["super_admin", "admin"].includes(data.role)) {
             router.push("/agent/dashboard")
+            return
+          }
+          // Enforce onboarding flow
+          if (data.must_change_password) {
+            router.push("/onboarding/change-password")
+            return
+          }
+          if (!data.agreement_signed_at) {
+            router.push("/onboarding/agreement")
           }
         })
     })
@@ -61,6 +72,7 @@ export default function AdminLayout({
           variant="admin"
           collapsed={collapsed}
           onCollapse={setCollapsed}
+          isSuperAdmin={isSuperAdmin}
         />
       </div>
 
@@ -69,7 +81,7 @@ export default function AdminLayout({
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
       >
-        <Sidebar variant="admin" />
+        <Sidebar variant="admin" isSuperAdmin={isSuperAdmin} />
       </MobileSidebarOverlay>
 
       {/* Main content */}

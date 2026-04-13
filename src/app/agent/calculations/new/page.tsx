@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, ArrowRight, CheckCircle, FileText, Save, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, CheckCircle, FileText, Plus, Save, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -20,9 +20,6 @@ import {
   calculateRefinance,
   calculateBiweekly,
   calculateSnowball,
-  calculateLegalFee,
-  calculateValuationFee,
-  calculateStampDuty,
   type RefinanceResults,
 } from "@/lib/calculations/loan"
 import {
@@ -36,6 +33,16 @@ import type { LoanType, Bank } from "@/types/database"
 
 // ─────────────────────────── Types ───────────────────────────
 
+interface CoBorrowerState {
+  name: string
+  ic: string
+  phone: string
+  email: string
+  dob: string
+  employer: string
+  monthlyIncome: string
+}
+
 interface WizardState {
   // Step 1
   loanType: LoanType | null
@@ -43,7 +50,11 @@ interface WizardState {
   clientIc: string
   clientPhone: string
   clientDob: string
+  clientEmail: string
+  clientEmployer: string
+  clientMonthlyIncome: string
   referralCode: string
+  coBorrowers: CoBorrowerState[]
 
   // Step 2 — Refinance current loan
   currentBank: string
@@ -74,6 +85,7 @@ interface WizardState {
   proposedTenureYears: number | undefined
   proposedTenureMonths: number | undefined
   financeInFees: boolean
+  feesHasQuotation: boolean | null
   legalFeeAmount: number | undefined
   valuationFeeAmount: number | undefined
   stampDutyAmount: number | undefined
@@ -86,6 +98,7 @@ interface WizardState {
   showBiweekly: boolean
   showSnowball: boolean
   snowballExtra: number | undefined
+  snowballScenario: "maintain_old" | "custom"
   showBreakeven: boolean
   showCashOutSummary: boolean
 }
@@ -94,9 +107,13 @@ const initialState: WizardState = {
   loanType: null,
   clientName: "",
   clientIc: "",
-  clientPhone: "",
+  clientPhone: "+60",
   clientDob: "",
+  clientEmail: "",
+  clientEmployer: "",
+  clientMonthlyIncome: "",
   referralCode: "",
+  coBorrowers: [],
   currentBank: "",
   currentLoanAmount: undefined,
   currentInterestRate: undefined,
@@ -121,6 +138,7 @@ const initialState: WizardState = {
   proposedTenureYears: undefined,
   proposedTenureMonths: undefined,
   financeInFees: false,
+  feesHasQuotation: null,
   legalFeeAmount: undefined,
   valuationFeeAmount: undefined,
   stampDutyAmount: undefined,
@@ -131,6 +149,7 @@ const initialState: WizardState = {
   showBiweekly: true,
   showSnowball: true,
   snowballExtra: undefined,
+  snowballScenario: "custom",
   showBreakeven: true,
   showCashOutSummary: true,
 }
@@ -138,9 +157,10 @@ const initialState: WizardState = {
 const STEP_LABELS = ["Loan Type", "Current Loan", "New Loan", "Modules", "Results"]
 
 const MALAYSIAN_BANKS = [
-  "Maybank", "CIMB", "Public Bank", "RHB Bank", "Hong Leong Bank",
-  "AmBank", "OCBC", "UOB", "Standard Chartered", "HSBC",
-  "Affin Bank", "Alliance Bank", "Bank Islam", "Bank Muamalat", "BSN",
+  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
+  "AmBank", "OCBC Bank", "UOB Malaysia", "Standard Chartered", "HSBC Bank Malaysia",
+  "Alliance Bank", "Affin Bank", "Bank Islam", "Bank Muamalat", "BSN",
+  "MBSB Bank", "Citibank Malaysia",
 ]
 
 const PROPERTY_TYPES = [
@@ -166,8 +186,9 @@ function NewCalculationWizard() {
   const [saving, setSaving] = React.useState(false)
   const [savedId, setSavedId] = React.useState<string | null>(null)
 
-  const maxTenureMonths = state.clientDob
-    ? calcMaxTenureMonths(state.clientDob)
+  const allDobs = [state.clientDob, ...state.coBorrowers.map(c => c.dob)].filter(Boolean)
+  const maxTenureMonths = allDobs.length > 0
+    ? Math.max(...allDobs.map(d => calcMaxTenureMonths(d)))
     : undefined
 
   // Fetch banks
@@ -216,20 +237,13 @@ function NewCalculationWizard() {
     }
   }, [state.propertyPurchasePrice, state.downPaymentPct, state.loanType])
 
-  // Auto-calc fees when financeInFees toggled or loan amount changes
+  // Auto-calc fees when no quotation: estimate 4% of loan amount
   React.useEffect(() => {
-    if (state.financeInFees && state.proposedLoanAmount) {
-      const legal = calculateLegalFee(state.proposedLoanAmount)
-      const val = calculateValuationFee(state.proposedLoanAmount)
-      const stamp = calculateStampDuty(state.proposedLoanAmount)
-      setState((s) => ({
-        ...s,
-        legalFeeAmount: Math.round(legal * 100) / 100,
-        valuationFeeAmount: Math.round(val * 100) / 100,
-        stampDutyAmount: Math.round(stamp * 100) / 100,
-      }))
+    if (state.financeInFees && state.feesHasQuotation === false && state.proposedLoanAmount) {
+      const totalFees = Math.round(state.proposedLoanAmount * 0.04 * 100) / 100
+      setState((s) => ({ ...s, legalFeeAmount: totalFees, valuationFeeAmount: 0 }))
     }
-  }, [state.financeInFees, state.proposedLoanAmount])
+  }, [state.financeInFees, state.feesHasQuotation, state.proposedLoanAmount])
 
   function update<K extends keyof WizardState>(key: K, value: WizardState[K]) {
     setState((s) => ({ ...s, [key]: value }))
@@ -265,17 +279,25 @@ function NewCalculationWizard() {
     if (step === 0 && state.loanType !== "refinance") {
       // Skip step 1 (current loan) for subsale/developer
       setStep(2)
+      window.scrollTo({ top: 0, behavior: "smooth" })
       return
     }
-    if (step < 4) setStep((s) => s + 1)
+    if (step < 4) {
+      setStep((s) => s + 1)
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
   }
 
   function handleBack() {
     if (step === 2 && state.loanType !== "refinance") {
       setStep(0)
+      window.scrollTo({ top: 0, behavior: "smooth" })
       return
     }
-    if (step > 0) setStep((s) => s - 1)
+    if (step > 0) {
+      setStep((s) => s - 1)
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
   }
 
   function handleCalculate() {
@@ -332,6 +354,7 @@ function NewCalculationWizard() {
       })
     }
     setStep(4)
+    window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   async function handleSave() {
@@ -413,6 +436,21 @@ function NewCalculationWizard() {
     state.currentMonthlyInstalment,
   ])
 
+  // ── Proposed MI + snowball extras for refinancing scenarios ──
+  const proposedMI = React.useMemo(() => {
+    const tenureMonths = (state.proposedTenureYears ?? 0) * 12 + (state.proposedTenureMonths ?? 0)
+    if (!state.proposedLoanAmount || !state.proposedInterestRate || tenureMonths === 0) return 0
+    return calculateMonthlyInstalment(state.proposedLoanAmount, state.proposedInterestRate, tenureMonths)
+  }, [state.proposedLoanAmount, state.proposedInterestRate, state.proposedTenureYears, state.proposedTenureMonths])
+
+  const maintainOldExtra = state.loanType === "refinance" && state.currentMonthlyInstalment && proposedMI > 0
+    ? Math.max(0, Math.round((state.currentMonthlyInstalment - proposedMI) * 100) / 100)
+    : 0
+
+  const effectiveSnowballExtra = state.showSnowball
+    ? (state.snowballScenario === "maintain_old" && maintainOldExtra > 0 ? maintainOldExtra : state.snowballExtra)
+    : undefined
+
   // ── Snowball/biweekly hints for step 4 ──
   const adviceHints = React.useMemo(() => {
     if (step !== 3) return null
@@ -429,13 +467,8 @@ function NewCalculationWizard() {
 
     let snowballSaved = 0
     if (state.snowballExtra && state.snowballExtra > 0) {
-      const sb = calculateSnowball(
-        state.proposedLoanAmount,
-        state.proposedInterestRate,
-        tenureMonths,
-        state.snowballExtra
-      )
-      snowballSaved = sb.saved
+      const sb = calculateSnowball(state.proposedLoanAmount, state.proposedInterestRate, tenureMonths, state.snowballExtra)
+      snowballSaved = totalInterest > 0 ? (totalInterest - sb.totalInterest) : 0
     }
 
     return { biweeklySavingsPct, snowballSaved }
@@ -445,7 +478,6 @@ function NewCalculationWizard() {
     state.proposedInterestRate,
     state.proposedTenureYears,
     state.proposedTenureMonths,
-    state.snowballExtra,
   ])
 
   const currentStepForIndicator = step === 4 ? 4 : step
@@ -545,10 +577,23 @@ function NewCalculationWizard() {
                             <input
                               type="text"
                               value={state.clientIc}
-                              onChange={(e) => update("clientIc", e.target.value)}
-                              placeholder="e.g. 901231-01-1234"
+                              onChange={(e) => {
+                                const ic = e.target.value
+                                update("clientIc", ic)
+                                const digits = ic.replace(/\D/g, "")
+                                if (digits.length >= 6) {
+                                  const yy = parseInt(digits.substring(0, 2))
+                                  const mm = digits.substring(2, 4)
+                                  const dd = digits.substring(4, 6)
+                                  const century = yy > new Date().getFullYear() % 100 ? 1900 : 2000
+                                  update("clientDob", `${century + yy}-${mm}-${dd}`)
+                                }
+                              }}
+                              placeholder="901231011234 (without dashes)"
+                              maxLength={14}
                               className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent placeholder:text-gray-400"
                             />
+                            <p className="text-xs text-gray-400 mt-1">Enter 12 digits without dashes — DOB will auto-fill</p>
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Phone Number</label>
@@ -571,10 +616,13 @@ function NewCalculationWizard() {
                               onChange={(e) => update("clientDob", e.target.value)}
                               className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent"
                             />
-                            {maxTenureMonths !== undefined && (
+                            {state.clientDob ? (
                               <p className="text-xs text-gray-500 mt-1">
-                                Max tenure: {monthsToYearsMonths(maxTenureMonths)} (until age 70)
+                                {new Date(state.clientDob + "T00:00:00").toLocaleDateString("en-GB")}
+                                {maxTenureMonths !== undefined && ` · Max tenure: ${monthsToYearsMonths(maxTenureMonths)}`}
                               </p>
+                            ) : (
+                              <p className="text-xs text-gray-400 mt-1">DD/MM/YYYY · auto-filled from IC</p>
                             )}
                           </div>
                           <div>
@@ -590,6 +638,108 @@ function NewCalculationWizard() {
                               className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent placeholder:text-gray-400"
                             />
                           </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Co-Borrowers Card */}
+                      <Card className="mt-6">
+                        <CardHeader className="flex flex-row items-center justify-between">
+                          <div>
+                            <CardTitle className="font-heading text-lg">Co-Borrowers</CardTitle>
+                            <p className="text-gray-500 text-xs mt-1">Add up to 3 co-borrowers</p>
+                          </div>
+                          {state.coBorrowers.length < 3 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                update("coBorrowers", [
+                                  ...state.coBorrowers,
+                                  { name: "", ic: "", phone: "", email: "", dob: "", employer: "", monthlyIncome: "" }
+                                ])
+                              }}
+                            >
+                              <Plus className="h-4 w-4 mr-1" /> Add Co-Borrower
+                            </Button>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          {state.coBorrowers.length === 0 ? (
+                            <p className="text-sm text-gray-400">No co-borrowers added.</p>
+                          ) : (
+                            state.coBorrowers.map((cb, idx) => (
+                              <div key={idx} className="p-4 border border-gray-100 rounded-lg relative bg-gray-50/50">
+                                <button
+                                  onClick={() => {
+                                    const newCb = [...state.coBorrowers]
+                                    newCb.splice(idx, 1)
+                                    update("coBorrowers", newCb)
+                                  }}
+                                  className="absolute top-4 right-4 text-gray-400 hover:text-red-500"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                                <h4 className="text-sm font-semibold mb-4">Co-Borrower {idx + 1}</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-xs font-medium text-[#0A1628] mb-1.5">Full Name</label>
+                                    <input
+                                      type="text"
+                                      value={cb.name}
+                                      onChange={(e) => {
+                                        const newCb = [...state.coBorrowers]; newCb[idx].name = e.target.value; update("coBorrowers", newCb)
+                                      }}
+                                      className="w-full h-9 px-3 text-xs rounded-md border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-[#0A1628] mb-1.5">IC Number</label>
+                                    <input
+                                      type="text"
+                                      value={cb.ic}
+                                      onChange={(e) => {
+                                        const newCb = [...state.coBorrowers]
+                                        const ic = e.target.value
+                                        newCb[idx].ic = ic
+                                        const digits = ic.replace(/\D/g, "")
+                                        if (digits.length >= 6) {
+                                          const yy = parseInt(digits.substring(0, 2))
+                                          const mm = digits.substring(2, 4)
+                                          const dd = digits.substring(4, 6)
+                                          const century = yy > new Date().getFullYear() % 100 ? 1900 : 2000
+                                          newCb[idx].dob = `${century + yy}-${mm}-${dd}`
+                                        }
+                                        update("coBorrowers", newCb)
+                                      }}
+                                      className="w-full h-9 px-3 text-xs rounded-md border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-[#0A1628] mb-1.5">Date of Birth</label>
+                                    <input
+                                      type="date"
+                                      value={cb.dob}
+                                      onChange={(e) => {
+                                        const newCb = [...state.coBorrowers]; newCb[idx].dob = e.target.value; update("coBorrowers", newCb)
+                                      }}
+                                      className="w-full h-9 px-3 text-xs rounded-md border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-[#0A1628] mb-1.5">Phone</label>
+                                    <input
+                                      type="tel"
+                                      value={cb.phone}
+                                      onChange={(e) => {
+                                        const newCb = [...state.coBorrowers]; newCb[idx].phone = e.target.value; update("coBorrowers", newCb)
+                                      }}
+                                      className="w-full h-9 px-3 text-xs rounded-md border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -609,17 +759,16 @@ function NewCalculationWizard() {
                       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                         <div className="sm:col-span-2">
                           <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Current Bank</label>
-                          <input
-                            type="text"
-                            list="banks-list"
+                          <select
                             value={state.currentBank}
                             onChange={(e) => update("currentBank", e.target.value)}
-                            placeholder="e.g. Maybank"
-                            className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent placeholder:text-gray-400"
-                          />
-                          <datalist id="banks-list">
-                            {MALAYSIAN_BANKS.map((b) => <option key={b} value={b} />)}
-                          </datalist>
+                            className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent"
+                          >
+                            <option value="">Select a bank...</option>
+                            {MALAYSIAN_BANKS.map((b) => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
                         </div>
                         <CurrencyInput
                           label="Outstanding Loan Amount *"
@@ -915,13 +1064,16 @@ function NewCalculationWizard() {
                               update("proposedBankId", e.target.value)
                               update("proposedBankName", bank?.name || "")
                               update("proposedBankCommissionRate", bank?.commission_rate || 0)
+                              if (bank?.interest_rate) {
+                                update("proposedInterestRate", bank.interest_rate)
+                              }
                             }}
                             className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent"
                           >
                             <option value="">Select a bank...</option>
                             {banks.map((b) => (
                               <option key={b.id} value={b.id}>
-                                {b.name} · {b.commission_rate}%
+                                {b.name}
                               </option>
                             ))}
                           </select>
@@ -1022,33 +1174,67 @@ function NewCalculationWizard() {
                           <motion.div
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: "auto" }}
-                            className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-amber-50 rounded-xl border border-amber-200"
+                            className="p-4 bg-amber-50 rounded-xl border border-amber-200 mt-3"
                           >
-                            <CurrencyInput
-                              label="Legal Fee"
-                              value={state.legalFeeAmount}
-                              onChange={(v) => update("legalFeeAmount", v)}
-                              placeholder="Auto-calculated"
-                            />
-                            <CurrencyInput
-                              label="Valuation Fee"
-                              value={state.valuationFeeAmount}
-                              onChange={(v) => update("valuationFeeAmount", v)}
-                              placeholder="Auto-calculated"
-                            />
-                            <CurrencyInput
-                              label="Stamp Duty (0.5%)"
-                              value={state.stampDutyAmount}
-                              onChange={() => {}}
-                              readOnly
-                            />
-                            {(state.legalFeeAmount || state.valuationFeeAmount || state.stampDutyAmount) && (
-                              <div className="sm:col-span-3 text-sm font-medium text-amber-800">
-                                Total fees: {formatCurrency(
-                                  (state.legalFeeAmount ?? 0) +
-                                  (state.valuationFeeAmount ?? 0) +
-                                  (state.stampDutyAmount ?? 0)
-                                )} — will be added to loan amount
+                            <div className="mb-4">
+                              <p className="text-sm font-medium text-[#0A1628] mb-2">Do you have a quotation from a valuer/lawyer?</p>
+                              <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input type="radio" name="feesQuotation" checked={state.feesHasQuotation === true} onChange={() => update("feesHasQuotation", true)} className="accent-[#C9A84C]" />
+                                  <span className="text-sm">Yes, exact quote</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input type="radio" name="feesQuotation" checked={state.feesHasQuotation === false} onChange={() => update("feesHasQuotation", false)} className="accent-[#C9A84C]" />
+                                  <span className="text-sm">No, estimate (4%)</span>
+                                </label>
+                              </div>
+                            </div>
+                            
+                            {state.feesHasQuotation === true && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <CurrencyInput
+                                  label="Legal Fee"
+                                  value={state.legalFeeAmount}
+                                  onChange={(v) => update("legalFeeAmount", v)}
+                                  placeholder="Exact amount"
+                                />
+                                <CurrencyInput
+                                  label="Valuation Fee"
+                                  value={state.valuationFeeAmount}
+                                  onChange={(v) => update("valuationFeeAmount", v)}
+                                  placeholder="Exact amount"
+                                />
+                              </div>
+                            )}
+
+                            {state.feesHasQuotation === false && (
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium text-amber-800">
+                                  Estimated Total Fees (4% of loan):{' '}
+                                  {state.proposedLoanAmount
+                                    ? `RM ${(state.proposedLoanAmount * 0.04).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`
+                                    : 'Enter loan amount above'}
+                                </div>
+                                {state.proposedLoanAmount && (
+                                  <p className="text-xs text-amber-700 bg-amber-100 px-3 py-2 rounded-lg">
+                                    Effective Loan Amount with Fees:{' '}
+                                    RM {(state.proposedLoanAmount * 1.04).toLocaleString('en-MY', { minimumFractionDigits: 2 })}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {state.feesHasQuotation === true && (state.legalFeeAmount || state.valuationFeeAmount) && (
+                              <div className="mt-3 space-y-1">
+                                <div className="text-sm font-medium text-amber-800">
+                                  Total fees to add: {formatCurrency((state.legalFeeAmount ?? 0) + (state.valuationFeeAmount ?? 0))}
+                                </div>
+                                {state.proposedLoanAmount && (
+                                  <p className="text-xs text-amber-700 bg-amber-100 px-3 py-2 rounded-lg">
+                                    Effective Loan Amount with Fees:{' '}
+                                    RM {(state.proposedLoanAmount + (state.legalFeeAmount ?? 0) + (state.valuationFeeAmount ?? 0)).toLocaleString('en-MY', { minimumFractionDigits: 2 })}
+                                  </p>
+                                )}
                               </div>
                             )}
                           </motion.div>
@@ -1166,7 +1352,7 @@ function NewCalculationWizard() {
                         <div>
                           <p className="text-sm font-medium text-[#0A1628]">Snowball Extra Payment</p>
                           <p className="text-xs text-gray-500">
-                            {adviceHints && state.snowballExtra && adviceHints.snowballSaved > 0
+                            {adviceHints && effectiveSnowballExtra && adviceHints.snowballSaved > 0
                               ? `Saves ${formatCurrency(adviceHints.snowballSaved)} in interest`
                               : "Pay extra each month to reduce total interest"}
                           </p>
@@ -1186,12 +1372,32 @@ function NewCalculationWizard() {
                         </button>
                       </div>
                       {state.showSnowball && (
-                        <CurrencyInput
-                          label="Extra monthly payment"
-                          value={state.snowballExtra}
-                          onChange={(v) => update("snowballExtra", v)}
-                          placeholder="500"
-                        />
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          {state.loanType === "refinance" && maintainOldExtra > 0 && (
+                            <div className="flex gap-4 mb-4">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" checked={state.snowballScenario === "maintain_old"} onChange={() => update("snowballScenario", "maintain_old")} className="accent-[#C9A84C]" />
+                                <span className="text-sm">Maintain old instalment (+{formatCurrency(maintainOldExtra)})</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" checked={state.snowballScenario === "custom"} onChange={() => update("snowballScenario", "custom")} className="accent-[#C9A84C]" />
+                                <span className="text-sm">Custom extra</span>
+                              </label>
+                            </div>
+                          )}
+                          {state.snowballScenario === "maintain_old" && state.loanType === "refinance" ? (
+                            <div className="text-sm text-[#0A1628]">
+                              Extra: <span className="font-semibold">{formatCurrency(maintainOldExtra)}/mo</span>
+                            </div>
+                          ) : (
+                            <CurrencyInput
+                              label="Extra monthly payment"
+                              value={state.snowballExtra}
+                              onChange={(v) => update("snowballExtra", v)}
+                              placeholder="500"
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -1399,14 +1605,32 @@ function ResultsPanel({
     (state.proposedTenureYears ?? 0) * 12 + (state.proposedTenureMonths ?? 0)
 
   const snowballResult = React.useMemo(() => {
-    if (!state.showSnowball || !state.snowballExtra || !state.proposedLoanAmount || !state.proposedInterestRate) return null
+    const proposedMI = state.proposedLoanAmount && state.proposedInterestRate && proposedTenureMonths > 0
+      ? calculateMonthlyInstalment(state.proposedLoanAmount, state.proposedInterestRate, proposedTenureMonths)
+      : 0
+      
+    const maintainOldExtra = state.loanType === "refinance" && state.currentMonthlyInstalment && proposedMI > 0
+      ? Math.max(0, Math.round((state.currentMonthlyInstalment - proposedMI) * 100) / 100)
+      : 0
+
+    const effectiveSnowballExtra = state.showSnowball
+      ? (state.snowballScenario === "maintain_old" && maintainOldExtra > 0 ? maintainOldExtra : state.snowballExtra)
+      : undefined
+
+    if (!state.showSnowball || !effectiveSnowballExtra || !state.proposedLoanAmount || !state.proposedInterestRate) return null
     return calculateSnowball(
       state.proposedLoanAmount,
       state.proposedInterestRate,
       proposedTenureMonths,
-      state.snowballExtra
+      effectiveSnowballExtra
     )
-  }, [state.showSnowball, state.snowballExtra, state.proposedLoanAmount, state.proposedInterestRate, proposedTenureMonths])
+  }, [state.showSnowball, state.snowballScenario, state.loanType, state.currentMonthlyInstalment, state.snowballExtra, state.proposedLoanAmount, state.proposedInterestRate, proposedTenureMonths])
+
+  const effectiveSnowballExtra = state.showSnowball
+    ? (state.snowballScenario === "maintain_old" && state.loanType === "refinance" && state.currentMonthlyInstalment
+        ? Math.max(0, state.currentMonthlyInstalment - (state.proposedLoanAmount && state.proposedInterestRate && proposedTenureMonths > 0 ? calculateMonthlyInstalment(state.proposedLoanAmount, state.proposedInterestRate, proposedTenureMonths) : 0))
+        : state.snowballExtra)
+    : undefined
 
   return (
     <div className="space-y-6">
@@ -1565,7 +1789,7 @@ function ResultsPanel({
           <Card>
             <CardContent className="pt-5">
               <p className="font-semibold text-[#0A1628] mb-2">
-                Snowball: Extra {formatCurrency(state.snowballExtra ?? 0)}/month
+                Snowball: Extra {formatCurrency(effectiveSnowballExtra ?? 0)}/month
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
                 <div>
