@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ArrowRight, Check, Loader2, Plus, X, Save, FileText } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Loader2, Plus, X, Save, FileText, Send } from 'lucide-react'
+import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -422,6 +423,7 @@ function NewCasePageInner() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPrintView, setShowPrintView] = useState(false)
   const [savedCaseData, setSavedCaseData] = useState<any>(null)
+  const [savedCaseId, setSavedCaseId] = useState<string | null>(null)
   
   // Lawyer selection state
   const [availableLawyers, setAvailableLawyers] = useState<Array<{
@@ -885,11 +887,11 @@ function NewCasePageInner() {
 
   const handleSaveDraft = async () => {
     if (!formData.loan_type) {
-      alert('Please select a loan type before saving as draft.')
+      toast.error('Please select a loan type before saving as draft.')
       return
     }
     if (!formData.selected_bank) {
-      alert('Please select a bank before saving as draft.')
+      toast.error('Please select a bank before saving as draft.')
       return
     }
     setIsLoading(true)
@@ -901,40 +903,54 @@ function NewCasePageInner() {
       const clientId = await upsertClient(supabase, user.id)
       const payload = { ...buildCasePayload(user.id), client_id: clientId }
 
-      const { data, error } = await supabase
-        .from('cases')
-        .insert([payload as any])
-        .select()
-        .single()
-
-      if (error) throw error
-
-      if (calculationId) {
-        await supabase.from('calculations').update({ case_id: (data as any).id })
+      if (savedCaseId) {
+        // Already saved — PATCH the existing draft
+        const res = await fetch(`/api/cases/${savedCaseId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, client_id: undefined }),
+        })
+        if (!res.ok) {
+          const j = await res.json()
+          throw new Error(j.error || 'Failed to update draft')
+        }
+        const { data: updated } = await res.json()
+        setSavedCaseData(updated)
+        toast.success('Draft updated!')
+      } else {
+        // First save — INSERT
+        const { data, error } = await supabase
+          .from('cases')
+          .insert([payload as any])
+          .select()
+          .single()
+        if (error) throw error
+        setSavedCaseId((data as any).id)
+        setSavedCaseData(data)
+        if (calculationId) {
+          await supabase.from('calculations').update({ case_id: (data as any).id })
+        }
+        toast.success('Draft saved! Fill in remaining details, then Render to PDF and Submit.')
       }
-
-      setSavedCaseData(data)
-      alert('✅ Case saved as draft successfully! You can find it in your Cases list.')
-      router.push('/agent/cases')
     } catch (error: any) {
-      alert(`❌ Error: ${error?.message || 'Failed to save draft. Please try again.'}`)
+      toast.error(error?.message || 'Failed to save draft. Please try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleSubmit = async () => {
-    // Validate all steps before submitting
-    let hasErrors = false
+    // Validate all steps
+    let firstErrorStep = 0
     for (let step = 1; step <= totalSteps; step++) {
       if (!validateStep(step)) {
-        hasErrors = true
+        if (!firstErrorStep) firstErrorStep = step
       }
     }
 
-    if (hasErrors) {
-      alert('❌ Please fill in all required fields before submitting.')
-      setIsLoading(false)
+    if (firstErrorStep) {
+      setCurrentStep(firstErrorStep)
+      toast.error('Please fill in all required fields. Jumped to the first step with errors.')
       return
     }
 
@@ -945,50 +961,37 @@ function NewCasePageInner() {
       if (!user) throw new Error('Not authenticated')
 
       const clientId = await upsertClient(supabase, user.id)
-      const caseData = { ...buildCasePayload(user.id), client_id: clientId }
 
-      const { data, error } = await supabase
-        .from('cases')
-        .insert([caseData as any])
-        .select()
-        .single()
-
-      if (error) throw error
-
-      if (calculationId) {
-        await supabase
-          .from('calculations')
-          .update({ case_id: (data as any).id })
-      }
-
-      setSavedCaseData(data)
-      
-      // Only show print view if user clicked "Render to PDF" or "Submit Case" from final step
-      // Don't auto-show on "Save as Draft"
-      if (currentStep === totalSteps) {
-        setShowPrintView(true)
+      if (savedCaseId) {
+        // Case already saved — PATCH status to submitted
+        const res = await fetch(`/api/cases/${savedCaseId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...buildCasePayload(user.id), status: 'submitted' }),
+        })
+        if (!res.ok) {
+          const j = await res.json()
+          throw new Error(j.error || 'Failed to submit case')
+        }
       } else {
-        // Show success message and redirect to cases list for draft saves
-        alert('✅ Case saved as draft successfully! You can find it in your Cases list.')
-        router.push('/agent/cases')
+        // Not saved yet — INSERT directly as submitted
+        const caseData = { ...buildCasePayload(user.id), client_id: clientId, status: 'submitted' }
+        const { data, error } = await supabase
+          .from('cases')
+          .insert([caseData as any])
+          .select()
+          .single()
+        if (error) throw error
+        if (calculationId) {
+          await supabase.from('calculations').update({ case_id: (data as any).id })
+        }
       }
+
+      toast.success('Case submitted successfully!')
+      router.push('/agent/cases')
     } catch (error: any) {
-      console.error('Error saving case:', error)
-      
-      // Extract meaningful error message
-      let errorMessage = 'Failed to save case. Please try again.'
-      
-      if (error.message) {
-        errorMessage = error.message
-      } else if (error.details) {
-        errorMessage = error.details
-      } else if (error.hint) {
-        errorMessage = error.hint
-      } else if (typeof error === 'string') {
-        errorMessage = error
-      }
-      
-      alert(`❌ Error: ${errorMessage}`)
+      console.error('Error submitting case:', error)
+      toast.error(error?.message || 'Failed to submit case. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -1322,7 +1325,16 @@ function NewCasePageInner() {
                 <button
                   key={lt.value}
                   type="button"
-                  onClick={() => handleInputChange('loan_type', lt.value)}
+                  onClick={() => {
+                    handleInputChange('loan_type', lt.value)
+                    // Pre-fill purpose_of_financing so bank forms don't ask again
+                    const purposeMap: Record<string, string> = {
+                      refinance: 'refinance',
+                      subsale: 'purchase_own',
+                      developer: 'purchase_own',
+                    }
+                    handleInputChange('purpose_of_financing', purposeMap[lt.value] || '')
+                  }}
                   className={cn(
                     "p-4 border-2 rounded-lg text-left transition-all",
                     formData.loan_type === lt.value
@@ -1711,8 +1723,8 @@ function NewCasePageInner() {
               </Button>
             </div>
             
-            <div className="flex gap-3">
-              {/* Render to PDF Button - Only show if we have saved case data */}
+            <div className="flex gap-3 flex-wrap">
+              {/* Render to PDF — visible once draft is saved */}
               {savedCaseData && (
                 <Button
                   variant="outline"
@@ -1723,12 +1735,13 @@ function NewCasePageInner() {
                   Render to PDF
                 </Button>
               )}
-              
-              {currentStep === totalSteps ? (
+
+              {/* Submit — always visible once saved, or on last step */}
+              {(savedCaseId || currentStep === totalSteps) && (
                 <Button
                   onClick={handleSubmit}
                   disabled={isLoading}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   {isLoading ? (
                     <>
@@ -1737,12 +1750,14 @@ function NewCasePageInner() {
                     </>
                   ) : (
                     <>
-                      <Check className="h-4 w-4 mr-2" />
+                      <Send className="h-4 w-4 mr-2" />
                       Submit Case
                     </>
                   )}
                 </Button>
-              ) : (
+              )}
+
+              {currentStep < totalSteps && (
                 <Button onClick={handleNext} disabled={isLoading}>
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
