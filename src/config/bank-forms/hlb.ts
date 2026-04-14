@@ -554,17 +554,17 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'insurance_type',
-          label: 'Insurance/Takaful Type',
-          type: 'select',
+          label: 'Insurance/Takaful',
+          type: 'radio',
           required: false,
           options: [
+            { label: 'No Insurance', value: 'none' },
             { label: 'MDTA', value: 'mdta' },
             { label: 'MRTT', value: 'mrtt' },
             { label: 'MLTA', value: 'mlta' },
             { label: 'MLTT', value: 'mltt' },
-            { label: 'None', value: 'none' }
           ],
-          gridColumn: 1
+          gridColumn: 2
         },
         {
           id: 'insurance_financed_by',
@@ -1011,11 +1011,11 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'has_valuer',
-          label: 'Do you have an appointed valuer?',
+          label: 'Valuers',
           type: 'radio',
           required: true,
           options: [
-            { label: 'Yes', value: 'yes' },
+            { label: 'Yes (verbal quote obtained)', value: 'yes' },
             { label: 'No, need quotation', value: 'need_quotation' },
             { label: 'No', value: 'no' }
           ],
@@ -1023,7 +1023,7 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'valuer_name',
-          label: 'Valuer Name',
+          label: 'Valuer 1 — Name',
           type: 'text',
           required: false,
           conditional: { field: 'has_valuer', equals: 'yes' },
@@ -1031,7 +1031,7 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'valuer_firm',
-          label: 'Valuation Firm Name',
+          label: 'Valuer 1 — Firm',
           type: 'text',
           required: false,
           conditional: { field: 'has_valuer', equals: 'yes' },
@@ -1039,23 +1039,47 @@ export const hlbConfig: BankFormConfig = {
         },
         {
           id: 'valuer_contact',
-          label: 'Valuer Contact Number',
+          label: 'Valuer 1 — Contact',
           type: 'tel',
           required: false,
           conditional: { field: 'has_valuer', equals: 'yes' },
           gridColumn: 1
         },
         {
-          id: 'valuer_email',
-          label: 'Valuer Email',
-          type: 'email',
+          id: 'valuation_fee_quoted',
+          label: 'Valuer 1 — Indicative Value (RM)',
+          type: 'currency',
           required: false,
           conditional: { field: 'has_valuer', equals: 'yes' },
           gridColumn: 1
         },
         {
-          id: 'valuation_fee_quoted',
-          label: 'Valuation Fee Quoted (RM)',
+          id: 'valuer_2_name',
+          label: 'Valuer 2 — Name',
+          type: 'text',
+          required: false,
+          conditional: { field: 'has_valuer', equals: 'yes' },
+          gridColumn: 1
+        },
+        {
+          id: 'valuer_2_firm',
+          label: 'Valuer 2 — Firm',
+          type: 'text',
+          required: false,
+          conditional: { field: 'has_valuer', equals: 'yes' },
+          gridColumn: 1
+        },
+        {
+          id: 'valuer_2_contact',
+          label: 'Valuer 2 — Contact',
+          type: 'tel',
+          required: false,
+          conditional: { field: 'has_valuer', equals: 'yes' },
+          gridColumn: 1
+        },
+        {
+          id: 'valuer_2_fee_quoted',
+          label: 'Valuer 2 — Indicative Value (RM)',
           type: 'currency',
           required: false,
           conditional: { field: 'has_valuer', equals: 'yes' },

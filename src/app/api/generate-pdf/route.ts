@@ -134,7 +134,7 @@ export async function POST(request: Request) {
     // Determine which bank form to use
     const bankType = data.selected_bank === 'hong_leong_bank' ? 'hong_leong_bank' : 'ocbc'
     const bankFormPath = bankType === 'hong_leong_bank'
-      ? path.join(process.cwd(), 'Forms', 'HONG LEONG BANK APPLICATION FORM.pdf')
+      ? path.join(process.cwd(), 'Forms', 'HLB_CALIBRATION.pdf')
       : path.join(process.cwd(), 'Forms', 'OCBC APPLICATION FORM 0225.pdf')
 
     // Check if form file exists

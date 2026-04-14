@@ -342,7 +342,7 @@ const initialForm: CaseFormData = {
   valuation_cost_amount: '',
   current_bank_name: '',
   refinance_purpose: [],
-  insurance_type: '',
+  insurance_type: 'none',
   insurance_financed_by: '',
   insurance_premium_amount: '',
   insurance_term_months: '',
@@ -469,6 +469,33 @@ function NewCasePageInner() {
       setBankConfig(null)
     }
   }, [formData.selected_bank])
+
+  // Auto-fill bank form lawyer fields from Step 4 selection so agent isn't asked twice
+  useEffect(() => {
+    if (formData.selected_lawyer_type === 'panel' && formData.lawyer_id) {
+      const lawyer = availableLawyers.find(l => l.id === formData.lawyer_id)
+      if (lawyer) {
+        setFormData(prev => ({
+          ...prev,
+          has_lawyer: 'yes',
+          lawyer_name: lawyer.name,
+          lawyer_firm: lawyer.firm,
+          lawyer_contact: lawyer.phone || '',
+          lawyer_email: lawyer.general_email || '',
+        } as any))
+      }
+    } else if (formData.selected_lawyer_type === 'others' && formData.lawyer_name_other) {
+      setFormData(prev => ({
+        ...prev,
+        has_lawyer: 'yes',
+        lawyer_name: formData.lawyer_name_other,
+        lawyer_firm: formData.lawyer_firm_other,
+        lawyer_contact: formData.lawyer_contact_other,
+        lawyer_email: formData.lawyer_email_other,
+      } as any))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.lawyer_id, formData.selected_lawyer_type, formData.lawyer_name_other])
 
   // Fetch panel lawyers when bank changes
   useEffect(() => {
