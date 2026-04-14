@@ -424,7 +424,7 @@ export default function NewCasePage() {
     id: string
     name: string
     firm: string
-    email: string | null
+    general_email: string | null
     phone: string | null
   }>>([])
 
@@ -447,16 +447,20 @@ export default function NewCasePage() {
         setAvailableLawyers([])
         return
       }
-      
+
       try {
         const supabase = createClient()
-        
+
+        // Resolve the human-readable bank name from the bank ID (e.g. 'hong_leong_bank' → 'Hong Leong Bank')
+        const config = getBankFormConfig(formData.selected_bank)
+        const bankName = config?.bankName || formData.selected_bank
+
         // Get bank ID first
         const { data: bankData } = await supabase
           .from('banks')
           .select('id')
-          .eq('name', formData.selected_bank)
-          .single()
+          .eq('name', bankName)
+          .maybeSingle()
         
         if (!bankData) {
           setAvailableLawyers([])
@@ -479,7 +483,7 @@ export default function NewCasePage() {
         
         const { data: lawyers, error } = await supabase
           .from('lawyers')
-          .select('id, name, firm, email, phone')
+          .select('id, name, firm, general_email, phone')
           .in('id', lawyerIds)
           .eq('is_active', true)
           .order('name')
@@ -526,8 +530,8 @@ export default function NewCasePage() {
         client_old_ic: calc.client_old_ic || '',
         client_passport: calc.client_passport || '',
         id_type: calc.id_type || 'nric',
-        passport_expiry_date: formatDateToDDMMYYYY(calc.passport_expiry_date),
-        client_dob: formatDateToDDMMYYYY(calc.client_dob),
+        passport_expiry_date: calc.passport_expiry_date || '',
+        client_dob: calc.client_dob || '',
         gender: calc.gender || '',
         race: calc.race || '',
         bumiputra: calc.bumiputra || '',
@@ -711,6 +715,151 @@ export default function NewCasePage() {
     setCurrentStep(prev => Math.max(prev - 1, 1))
   }
 
+  // Build the case payload from current formData (shared by draft + submit)
+  const buildCasePayload = (agentId: string) => ({
+    agent_id: agentId,
+    selected_bank: formData.selected_bank,
+    status: 'draft',
+    bank_form_data: {
+      client_title: formData.client_title,
+      client_name: formData.client_name,
+      id_type: formData.id_type,
+      client_ic: formData.client_ic,
+      client_old_ic: formData.client_old_ic,
+      client_passport: formData.client_passport,
+      client_other_id: formData.client_other_id,
+      passport_expiry_date: formData.passport_expiry_date,
+      client_dob: formData.client_dob,
+      gender: formData.gender,
+      race: formData.race,
+      bumiputra: formData.bumiputra,
+      marital_status: formData.marital_status,
+      no_of_dependants: parseInt(formData.no_of_dependants) || 0,
+      home_address: formData.home_address,
+      post_code: formData.post_code,
+      city: formData.city,
+      state: formData.state,
+      country: formData.country,
+      years_at_address: formData.years_at_address,
+      correspondence_same_as_home: formData.correspondence_same_as_home,
+      correspondence_address: formData.correspondence_address,
+      client_email: formData.client_email,
+      client_phone: formData.client_phone,
+      employment_type: formData.employment_type,
+      employer_name: formData.employer_name,
+      nature_of_business: formData.nature_of_business,
+      occupation: formData.occupation,
+      employer_address: formData.employer_address,
+      office_tel: formData.office_tel,
+      length_service_years: parseInt(formData.length_service_years) || 0,
+      length_service_months: parseInt(formData.length_service_months) || 0,
+      monthly_income: parseFloat(formData.monthly_income) || 0,
+      company_establishment_date: formData.company_establishment_date,
+      prev_employer_name: formData.prev_employer_name,
+      prev_nature_of_business: formData.prev_nature_of_business,
+      prev_occupation: formData.prev_occupation,
+      prev_length_service: formData.prev_length_service,
+      product_type: formData.product_type,
+      is_islamic: formData.is_islamic,
+      purpose_of_financing: formData.purpose_of_financing,
+      facility_type: formData.facility_type,
+      facility_amount: formData.facility_amount,
+      facility_tenure_months: formData.facility_tenure_months,
+      overdraft_amount: formData.overdraft_amount,
+      overdraft_tenure_months: formData.overdraft_tenure_months,
+      other_facility_details: formData.other_facility_details,
+      finance_legal_cost: formData.finance_legal_cost,
+      legal_cost_amount: formData.legal_cost_amount,
+      finance_valuation_cost: formData.finance_valuation_cost,
+      valuation_cost_amount: formData.valuation_cost_amount,
+      current_bank_name: formData.current_bank_name,
+      refinance_purpose: formData.refinance_purpose,
+      insurance_type: formData.insurance_type,
+      insurance_financed_by: formData.insurance_financed_by,
+      insurance_premium_amount: formData.insurance_premium_amount,
+      insurance_term_months: formData.insurance_term_months,
+      deferment_period_months: formData.deferment_period_months,
+      sum_insured_main: formData.sum_insured_main,
+      sum_insured_joint: formData.sum_insured_joint,
+      sum_insured_3rd: formData.sum_insured_3rd,
+      sum_insured_4th: formData.sum_insured_4th,
+      loan_amount: formData.loan_amount,
+      loan_tenure: formData.loan_tenure,
+      interest_rate: formData.interest_rate,
+      loan_purpose: formData.loan_purpose,
+      property_type: formData.property_type,
+      property_subtype: formData.property_subtype,
+      no_of_storey: formData.no_of_storey,
+      financing_type: formData.financing_type,
+      built_type: formData.built_type,
+      construction_stage: formData.construction_stage,
+      percent_completed: formData.percent_completed,
+      project_name: formData.project_name,
+      developer_seller_name: formData.developer_seller_name,
+      property_address: formData.property_address,
+      property_post_code: formData.property_post_code,
+      property_city: formData.property_city,
+      property_state: formData.property_state,
+      property_country: formData.property_country,
+      purchase_price: formData.purchase_price,
+      first_house: formData.first_house,
+      land_size_sqft: formData.land_size_sqft,
+      buildup_size_sqft: formData.buildup_size_sqft,
+      title_type: formData.title_type,
+      land_tenure: formData.land_tenure,
+      co_borrowers: formData.co_borrowers,
+      valuer_name: (formData as any).valuer_name,
+      valuer_firm: (formData as any).valuer_firm,
+      valuer_contact: (formData as any).valuer_contact,
+      valuation_date: (formData as any).valuation_date,
+      indicative_value: (formData as any).indicative_value,
+      valuation_fee_quoted: (formData as any).valuation_fee_quoted,
+      report_received: (formData as any).report_received,
+      selected_lawyer_type: formData.selected_lawyer_type,
+      lawyer_id: formData.lawyer_id || null,
+      lawyer_professional_fee: formData.lawyer_professional_fee ? parseFloat(formData.lawyer_professional_fee) : null,
+      has_special_arrangement: formData.has_special_arrangement,
+      special_arrangement_discount: formData.special_arrangement_discount ? parseFloat(formData.special_arrangement_discount) : null,
+      lawyer_name_other: formData.lawyer_name_other,
+      lawyer_firm_other: formData.lawyer_firm_other,
+      lawyer_contact_other: formData.lawyer_contact_other,
+      lawyer_email_other: formData.lawyer_email_other,
+    }
+  })
+
+  const handleSaveDraft = async () => {
+    if (!formData.selected_bank) {
+      alert('Please select a bank before saving as draft.')
+      return
+    }
+    setIsLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      const { data, error } = await supabase
+        .from('cases')
+        .insert([buildCasePayload(user.id) as any])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      if (calculationId) {
+        await supabase.from('calculations').update({ case_id: (data as any).id })
+      }
+
+      setSavedCaseData(data)
+      alert('✅ Case saved as draft successfully! You can find it in your Cases list.')
+      router.push('/agent/cases')
+    } catch (error: any) {
+      alert(`❌ Error: ${error?.message || 'Failed to save draft. Please try again.'}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSubmit = async () => {
     // Validate all steps before submitting
     let hasErrors = false
@@ -719,163 +868,20 @@ export default function NewCasePage() {
         hasErrors = true
       }
     }
-    
+
     if (hasErrors) {
       alert('❌ Please fill in all required fields before submitting.')
       setIsLoading(false)
       return
     }
-    
+
     setIsLoading(true)
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Build case data - only include columns that exist in cases table
-      const caseData = {
-        agent_id: user.id,
-        selected_bank: formData.selected_bank,
-        status: 'draft',
-        notes: formData.notes,
-        // Store ALL dynamic form data in JSONB column
-        bank_form_data: {
-          // Client Information
-          client_title: formData.client_title,
-          client_name: formData.client_name,
-          id_type: formData.id_type,
-          client_ic: formData.client_ic,
-          client_old_ic: formData.client_old_ic,
-          client_passport: formData.client_passport,
-          client_other_id: formData.client_other_id,
-          passport_expiry_date: formData.passport_expiry_date,
-          client_dob: formData.client_dob,
-          gender: formData.gender,
-          race: formData.race,
-          bumiputra: formData.bumiputra,
-          marital_status: formData.marital_status,
-          no_of_dependants: parseInt(formData.no_of_dependants) || 0,
-          home_address: formData.home_address,
-          post_code: formData.post_code,
-          city: formData.city,
-          state: formData.state,
-          country: formData.country,
-          years_at_address: formData.years_at_address,
-          correspondence_same_as_home: formData.correspondence_same_as_home,
-          correspondence_address: formData.correspondence_address,
-          client_email: formData.client_email,
-          client_phone: formData.client_phone,
-          
-          // Employment Information
-          employment_type: formData.employment_type,
-          employer_name: formData.employer_name,
-          nature_of_business: formData.nature_of_business,
-          occupation: formData.occupation,
-          employer_address: formData.employer_address,
-          office_tel: formData.office_tel,
-          length_service_years: parseInt(formData.length_service_years) || 0,
-          length_service_months: parseInt(formData.length_service_months) || 0,
-          monthly_income: parseFloat(formData.monthly_income) || 0,
-          company_establishment_date: formData.company_establishment_date,
-          prev_employer_name: formData.prev_employer_name,
-          prev_nature_of_business: formData.prev_nature_of_business,
-          prev_occupation: formData.prev_occupation,
-          prev_length_service: formData.prev_length_service,
-          
-          // Financing Details
-          product_type: formData.product_type,
-          is_islamic: formData.is_islamic,
-          purpose_of_financing: formData.purpose_of_financing,
-          facility_type: formData.facility_type,
-          facility_amount: formData.facility_amount,
-          facility_tenure_months: formData.facility_tenure_months,
-          overdraft_amount: formData.overdraft_amount,
-          overdraft_tenure_months: formData.overdraft_tenure_months,
-          other_facility_details: formData.other_facility_details,
-          finance_legal_cost: formData.finance_legal_cost,
-          legal_cost_amount: formData.legal_cost_amount,
-          finance_valuation_cost: formData.finance_valuation_cost,
-          valuation_cost_amount: formData.valuation_cost_amount,
-          current_bank_name: formData.current_bank_name,
-          refinance_purpose: formData.refinance_purpose,
-          insurance_type: formData.insurance_type,
-          insurance_financed_by: formData.insurance_financed_by,
-          insurance_premium_amount: formData.insurance_premium_amount,
-          insurance_term_months: formData.insurance_term_months,
-          deferment_period_months: formData.deferment_period_months,
-          sum_insured_main: formData.sum_insured_main,
-          sum_insured_joint: formData.sum_insured_joint,
-          sum_insured_3rd: formData.sum_insured_3rd,
-          sum_insured_4th: formData.sum_insured_4th,
-          
-          // Loan Details
-          loan_amount: formData.loan_amount,
-          loan_tenure: formData.loan_tenure,
-          interest_rate: formData.interest_rate,
-          loan_purpose: formData.loan_purpose,
-          
-          // Property Details
-          property_type: formData.property_type,
-          property_subtype: formData.property_subtype,
-          no_of_storey: formData.no_of_storey,
-          financing_type: formData.financing_type,
-          built_type: formData.built_type,
-          construction_stage: formData.construction_stage,
-          percent_completed: formData.percent_completed,
-          project_name: formData.project_name,
-          developer_seller_name: formData.developer_seller_name,
-          property_address: formData.property_address,
-          property_post_code: formData.property_post_code,
-          property_city: formData.property_city,
-          property_state: formData.property_state,
-          property_country: formData.property_country,
-          purchase_price: formData.purchase_price,
-          first_house: formData.first_house,
-          land_size_sqft: formData.land_size_sqft,
-          buildup_size_sqft: formData.buildup_size_sqft,
-          title_type: formData.title_type,
-          land_tenure: formData.land_tenure,
-          strata_type: formData.strata_type,
-          year_built: formData.year_built,
-          existing_loan_outstanding: formData.existing_loan_outstanding,
-          existing_loan_monthly: formData.existing_loan_monthly,
-          existing_loan_tenure_left: formData.existing_loan_tenure_left,
-          renovation_loan: formData.renovation_loan,
-          renovation_amount: formData.renovation_amount,
-          
-          // Co-borrowers (if any)
-          co_borrowers: formData.co_borrowers,
-          
-          // Valuer Information
-          valuer_name: formData.valuer_name,
-          valuer_firm: formData.valuer_firm,
-          valuer_contact: formData.valuer_contact,
-          valuation_date: formData.valuation_date,
-          indicative_value: formData.indicative_value,
-          valuation_fee_quoted: formData.valuation_fee_quoted,
-          report_received: formData.report_received,
-          
-          // Lawyer Selection (Step 4)
-          selected_lawyer_type: formData.selected_lawyer_type,
-          lawyer_id: formData.lawyer_id || null,
-          lawyer_professional_fee: formData.lawyer_professional_fee ? parseFloat(formData.lawyer_professional_fee) : null,
-          has_special_arrangement: formData.has_special_arrangement,
-          special_arrangement_discount: formData.special_arrangement_discount ? parseFloat(formData.special_arrangement_discount) : null,
-          lawyer_name_other: formData.lawyer_name_other,
-          lawyer_firm_other: formData.lawyer_firm_other,
-          lawyer_contact_other: formData.lawyer_contact_other,
-          lawyer_email_other: formData.lawyer_email_other,
-        }
-      }
-
-      // Debug: Log the data being sent
-      console.log('Attempting to save case with data:', {
-        agent_id: caseData.agent_id,
-        selected_bank: caseData.selected_bank,
-        client_name: caseData.client_name,
-        status: caseData.status,
-        total_fields: Object.keys(caseData).length
-      })
+      const caseData = buildCasePayload(user.id)
 
       const { data, error } = await supabase
         .from('cases')
@@ -883,15 +889,7 @@ export default function NewCasePage() {
         .select()
         .single()
 
-      if (error) {
-        console.error('Supabase error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        })
-        throw error
-      }
+      if (error) throw error
 
       if (calculationId) {
         await supabase
@@ -1594,10 +1592,10 @@ export default function NewCasePage() {
                 Previous
               </Button>
               
-              {/* Save as Draft Button - Available at any step */}
+              {/* Save as Draft Button - Available at any step, no full validation required */}
               <Button
                 variant="outline"
-                onClick={handleSubmit}
+                onClick={handleSaveDraft}
                 disabled={isLoading}
                 className="border-blue-600 text-blue-600 hover:bg-blue-50"
               >

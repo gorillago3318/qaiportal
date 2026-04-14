@@ -13,6 +13,10 @@ import {
   DollarSign,
   Loader2,
   Edit,
+  ClipboardList,
+  Mail,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,11 +46,427 @@ const statusColors: Record<CaseStatus, string> = {
   paid: 'bg-teal-100 text-teal-700',
 }
 
+type QuotationType = 'LA' | 'SPA' | 'MOT'
+
+interface LawyerRow {
+  id: string
+  name: string
+  firm: string
+  contact_email: string | null
+  panel_banks: string[]
+}
+
+interface ValuerEntry {
+  firm: string
+  name: string
+  indicative_value: string
+  date: string
+}
+
+interface QuotationRecord {
+  id: string
+  lawyer_id: string
+  lawyer_name: string
+  lawyer_firm: string
+  contact_email: string
+  template_types: QuotationType[]
+  sent_at: string
+  email_sent: boolean
+  email_error: string | null
+}
+
+// ── Email template builder ─────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildEmailBody(types: QuotationType[], caseData: any): { subject: string; body: string } {
+  const bfd = (caseData.bank_form_data || {}) as Record<string, unknown>
+  const clientName = (caseData.client?.full_name || bfd.client_name || '') as string
+  const rawCount = bfd.borrower_count as number | undefined
+  const borrowerCount = rawCount ?? 1
+  const bankName = (caseData.proposed_bank?.name || bfd.bank_name || '') as string
+  const loanAmt = caseData.proposed_loan_amount
+  const loanAmount = loanAmt ? `RM${Number(loanAmt).toLocaleString()}` : ''
+  const propertyType = (bfd.property_type || caseData.property_type || '') as string
+  const landTenure = (bfd.land_tenure || caseData.property_tenure || '') as string
+  const titleType = (bfd.title_type || caseData.property_title || '') as string
+  const state = (bfd.state || '') as string
+  const financingType = (bfd.financing_type || '') as string
+  const partyType = (bfd.party_type || '') as string
+  const specialRemark = (bfd.special_remark || bfd.special_remarks || '') as string
+
+  const sections: string[] = []
+  const subjects: string[] = []
+
+  if (types.includes('LA')) {
+    subjects.push('LA')
+    sections.push(`Request for Quotation LA
+
+Client Name: ${clientName}
+No. of Borrower: ${borrowerCount} borrower
+1st/3rd Party: ${partyType}
+
+Financing Type: ${financingType}
+Property details (Type): ${propertyType}
+Land Tenure: ${landTenure}
+Title Type: ${titleType}
+State: ${state}
+
+Bank: ${bankName}
+Loan Amount: ${loanAmount}
+
+Special remark: ${specialRemark}`)
+  }
+
+  if (types.includes('SPA')) {
+    subjects.push('SPA')
+    const purchasePrice = bfd.purchase_price ? `RM${Number(bfd.purchase_price).toLocaleString()}` : ''
+    const markUp = (bfd.mark_up || bfd.markup || 'No') as string
+    sections.push(`Request for Quotation SPA - Purchaser
+
+Client Name: ${clientName}
+No. of Purchaser: ${borrowerCount}
+
+Financing Type: ${financingType}
+Property details (Type): ${propertyType}
+Land Tenure: ${landTenure}
+Title Type: ${titleType}
+State: ${state}
+
+Purchase Price: ${purchasePrice}
+
+Special remark: ${specialRemark}
+Involve mark up? ${markUp}
+Please confirm if vendor bill is -`)
+  }
+
+  if (types.includes('MOT')) {
+    subjects.push('MOT')
+    const propertyAddress = (caseData.property_address || bfd.property_address || '') as string
+    const builtUp = (bfd.buildup_size_sqft || bfd.built_up || '') as string
+    const propertyValue = caseData.property_value ? `RM${Number(caseData.property_value).toLocaleString()}` : ''
+    const existingRaw = (bfd.existing_loan_outstanding || caseData.current_loan_amount) as number | undefined
+    const existingLoan = existingRaw ? `RM${Number(existingRaw).toLocaleString()}` : ''
+    const currentBank = (caseData.current_bank || bfd.current_bank_name || '') as string
+    const transferReason = (bfd.transfer_reason || '') as string
+    const markUp = (bfd.mark_up || bfd.markup || 'No') as string
+    const hasFinancing = caseData.proposed_loan_amount ? 'Yes' : 'No'
+    sections.push(`Request for Quotation MOT & Refinance – ${transferReason}
+
+Client Name: ${clientName}
+No. of Purchaser: ${borrowerCount} (registered owner after transfer)
+
+Financing Type: ${hasFinancing} (${financingType})
+Property Details (Type): ${propertyType}
+Full Address: ${propertyAddress}
+Built Up: ${builtUp} sqf
+Land Tenure: ${landTenure}
+Title Type: ${titleType}
+State: ${state}
+
+Market Value: ${propertyValue}
+
+Special Remark: ${specialRemark}
+Existing loan (current outstanding): ${existingLoan}
+Existing bank: ${currentBank}
+New/Refinance bank: ${bankName}
+
+Involve mark up?: ${markUp}
+Please confirm if vendor bill is: No`)
+  }
+
+  return {
+    subject: `Request for Quotation ${subjects.join(' + ')} – ${clientName}`,
+    body: sections.join('\n\n' + '─'.repeat(50) + '\n\n'),
+  }
+}
+
+// ── Stage 2 Panel ──────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function Stage2Panel({ caseId, caseData, onRefresh }: { caseId: string; caseData: any; onRefresh: () => void }) {
+  const bfd = (caseData.bank_form_data || {}) as Record<string, unknown>
+
+  // Valuers state
+  const emptyValuer = (): ValuerEntry => ({ firm: '', name: '', indicative_value: '', date: '' })
+  const initValuers = (): [ValuerEntry, ValuerEntry] => {
+    const saved = (bfd.valuers as ValuerEntry[] | undefined) || []
+    return [saved[0] || emptyValuer(), saved[1] || emptyValuer()]
+  }
+  const [valuers, setValuers] = useState<[ValuerEntry, ValuerEntry]>(initValuers)
+  const [savingValuers, setSavingValuers] = useState(false)
+  const [valuersSaved, setValuersSaved] = useState(false)
+
+  // Lawyer quotation state
+  const [panelLawyers, setPanelLawyers] = useState<LawyerRow[]>([])
+  const [loadingLawyers, setLoadingLawyers] = useState(true)
+  const [selectedLawyerId, setSelectedLawyerId] = useState('')
+  const [selectedTypes, setSelectedTypes] = useState<QuotationType[]>([])
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [sendingQuotation, setSendingQuotation] = useState(false)
+  const [quotationResult, setQuotationResult] = useState<{ sent: boolean; error: string | null } | null>(null)
+
+  const existingRequests = ((bfd.lawyer_quotation_requests as QuotationRecord[]) || [])
+
+  // Load panel lawyers for this bank
+  useEffect(() => {
+    const bankId = caseData.proposed_bank_id || caseData.proposed_bank?.id
+    if (!bankId) { setLoadingLawyers(false); return }
+    const supabase = createClient()
+    Promise.all([
+      supabase.from('lawyers').select('id, name, firm, contact_email').eq('is_active', true).eq('is_panel', true),
+      supabase.from('lawyer_bank_associations').select('lawyer_id').eq('bank_id', bankId).eq('is_panel', true),
+    ]).then(([{ data: lawyerData }, { data: assocData }]) => {
+      const panelIds = new Set((assocData || []).map((a: { lawyer_id: string }) => a.lawyer_id))
+      setPanelLawyers((lawyerData || []).filter((l: LawyerRow) => panelIds.has(l.id)))
+      setLoadingLawyers(false)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseData.proposed_bank_id, caseData.proposed_bank?.id])
+
+  // Rebuild email preview when lawyer/types change
+  useEffect(() => {
+    if (!selectedLawyerId || selectedTypes.length === 0) {
+      setEmailSubject('')
+      setEmailBody('')
+      return
+    }
+    const { subject, body } = buildEmailBody(selectedTypes, caseData)
+    setEmailSubject(subject)
+    setEmailBody(body)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLawyerId, selectedTypes])
+
+  const patchValuer = (idx: 0 | 1, field: keyof ValuerEntry, val: string) => {
+    setValuers((prev) => {
+      const next: [ValuerEntry, ValuerEntry] = [{ ...prev[0] }, { ...prev[1] }]
+      next[idx] = { ...next[idx], [field]: val }
+      return next
+    })
+  }
+
+  const handleSaveValuers = async () => {
+    setSavingValuers(true)
+    try {
+      const mergedBfd = { ...bfd, valuers }
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bank_form_data: mergedBfd }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      setValuersSaved(true)
+      onRefresh()
+    } catch {
+      toast.error('Failed to save valuers')
+    } finally {
+      setSavingValuers(false)
+    }
+  }
+
+  const toggleType = (t: QuotationType) =>
+    setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])
+
+  const handleSendQuotation = async () => {
+    if (!selectedLawyerId || selectedTypes.length === 0 || !emailBody) return
+    setSendingQuotation(true)
+    setQuotationResult(null)
+    try {
+      const res = await fetch(`/api/cases/${caseId}/lawyer-quotation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lawyer_id: selectedLawyerId, template_types: selectedTypes, email_subject: emailSubject, email_body: emailBody }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed')
+      setQuotationResult({ sent: json.email_sent, error: json.email_error })
+      onRefresh()
+      if (json.email_sent) {
+        setSelectedLawyerId('')
+        setSelectedTypes([])
+      }
+    } catch (err) {
+      setQuotationResult({ sent: false, error: err instanceof Error ? err.message : 'Failed' })
+    } finally {
+      setSendingQuotation(false)
+    }
+  }
+
+  const cls = 'w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]'
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <div className="h-7 w-7 rounded-lg bg-teal-50 flex items-center justify-center">
+            <ClipboardList className="h-4 w-4 text-teal-600" />
+          </div>
+          Stage 2 — Supporting Info
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+
+        {/* 2A — Valuers */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-[#0A1628] flex items-center gap-2">
+            2A — Verbal Valuations
+            <span className="text-xs font-normal text-gray-400">(2 valuers recommended)</span>
+          </h3>
+          {([0, 1] as const).map((idx) => (
+            <div key={idx} className="p-3 bg-gray-50 rounded-xl space-y-2">
+              <p className="text-xs font-medium text-gray-500">Valuer {idx + 1}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Firm</label>
+                  <input className={cls} placeholder="ABC Valuers Sdn Bhd" value={valuers[idx].firm} onChange={(e) => patchValuer(idx, 'firm', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Valuer Name</label>
+                  <input className={cls} placeholder="Ahmad bin Ali" value={valuers[idx].name} onChange={(e) => patchValuer(idx, 'name', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Indicative Value (RM)</label>
+                  <input className={cls} type="number" placeholder="500000" value={valuers[idx].indicative_value} onChange={(e) => patchValuer(idx, 'indicative_value', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Date of Quote</label>
+                  <input className={cls} type="date" value={valuers[idx].date} onChange={(e) => patchValuer(idx, 'date', e.target.value)} />
+                </div>
+              </div>
+            </div>
+          ))}
+          <div className="flex items-center gap-3">
+            <Button size="sm" disabled={savingValuers} onClick={handleSaveValuers} className="bg-[#0A1628] text-white hover:bg-[#0d1f38]">
+              {savingValuers ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+              Save Valuers
+            </Button>
+            {valuersSaved && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Saved</span>}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100" />
+
+        {/* 2B — Lawyer Quotation */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-[#0A1628] flex items-center gap-2">
+            2B — Lawyer Quotation Request
+          </h3>
+
+          {/* Past requests */}
+          {existingRequests.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-500">Sent requests</p>
+              {existingRequests.map((r) => (
+                <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 text-xs">
+                  <div>
+                    <span className="font-medium text-[#0A1628]">{r.lawyer_name}</span>
+                    <span className="text-gray-400 ml-2">{r.template_types.join(' + ')}</span>
+                    <span className="text-gray-400 ml-2">{new Date(r.sent_at).toLocaleString('en-MY', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                  </div>
+                  {r.email_sent
+                    ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sent</span>
+                    : <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Not sent</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* New request form */}
+          {loadingLawyers ? (
+            <div className="h-9 bg-gray-100 rounded-lg animate-pulse" />
+          ) : panelLawyers.length === 0 ? (
+            <div className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+              No panel lawyers found for the selected bank. Add panel lawyers in Admin → Settings → Panel Lawyers.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Panel Lawyer</label>
+                <select
+                  value={selectedLawyerId}
+                  onChange={(e) => setSelectedLawyerId(e.target.value)}
+                  className={cls}
+                >
+                  <option value="">Select a lawyer...</option>
+                  {panelLawyers.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.firm}{l.contact_email ? '' : ' (no contact email)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-2">Quotation Types</label>
+                <div className="flex gap-3">
+                  {(['LA', 'SPA', 'MOT'] as QuotationType[]).map((t) => (
+                    <label key={t} className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedTypes.includes(t)}
+                        onChange={() => toggleType(t)}
+                        className="rounded border-gray-300 text-[#C9A84C] focus:ring-[#C9A84C]"
+                      />
+                      {t}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {emailBody && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                    <input
+                      className={cls}
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Email Body <span className="font-normal text-gray-400">(editable)</span>
+                    </label>
+                    <textarea
+                      rows={14}
+                      value={emailBody}
+                      onChange={(e) => setEmailBody(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#C9A84C] resize-y"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {quotationResult && (
+                <div className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${quotationResult.sent ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {quotationResult.sent
+                    ? <><CheckCircle2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /> Email sent to lawyer's contact address. Record saved.</>
+                    : <><AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /> Record saved but email not sent: {quotationResult.error}</>}
+                </div>
+              )}
+
+              <Button
+                size="sm"
+                disabled={!selectedLawyerId || selectedTypes.length === 0 || !emailBody || sendingQuotation}
+                onClick={handleSendQuotation}
+                className="bg-[#0A1628] text-white hover:bg-[#0d1f38]"
+              >
+                {sendingQuotation ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Mail className="h-3.5 w-3.5 mr-1.5" />}
+                Send Quotation Request
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 interface CaseDetail {
   id: string
   case_code: string
   loan_type: LoanType
   status: CaseStatus
+  bank_form_data: Record<string, unknown> | null
+  proposed_bank_id: string | null
   current_bank: string | null
   current_loan_amount: number | null
   current_interest_rate: number | null
@@ -444,6 +864,11 @@ export default function AgentCaseDetailPage() {
               <InfoRow label="Finance Legal Fees" value={c.finance_legal_fees ? 'Yes' : 'No'} />
             </CardContent>
           </Card>
+
+          {/* Stage 2 — shown when case is draft */}
+          {c.status === 'draft' && (
+            <Stage2Panel caseId={id} caseData={c} onRefresh={fetchCase} />
+          )}
 
           {/* Admin Remarks */}
           {c.admin_remarks && (

@@ -264,7 +264,7 @@ export default function CalculationsPage() {
                             </Button>
                             {!calc.converted_to_case_id && (
                               <Button variant="ghost" size="sm" asChild>
-                                <Link href={`/agent/cases/new?calc=${calc.id}`}>
+                                <Link href={`/agent/cases/new?from_calculation=${calc.id}`}>
                                   <ArrowRight className="h-3 w-3" />
                                   <span className="hidden sm:inline">Case</span>
                                 </Link>

@@ -48,6 +48,7 @@ interface WizardState {
   loanType: LoanType | null
   clientName: string
   clientIc: string
+  clientAge: string           // alternative to IC/DOB — used only if no DOB derived
   clientPhone: string
   clientDob: string
   clientEmail: string
@@ -107,6 +108,7 @@ const initialState: WizardState = {
   loanType: null,
   clientName: "",
   clientIc: "",
+  clientAge: "",
   clientPhone: "+60",
   clientDob: "",
   clientEmail: "",
@@ -372,7 +374,7 @@ function NewCalculationWizard() {
           client_name: state.clientName,
           client_ic: state.clientIc || null,
           client_phone: state.clientPhone || null,
-          client_dob: state.clientDob || null,
+          client_dob: state.clientDob || (state.clientAge ? `${new Date().getFullYear() - parseInt(state.clientAge)}-01-01` : null),
           loan_type: state.loanType,
           current_bank: state.currentBank || null,
           current_loan_amount: state.currentLoanAmount ?? null,
@@ -586,7 +588,9 @@ function NewCalculationWizard() {
                                   const mm = digits.substring(2, 4)
                                   const dd = digits.substring(4, 6)
                                   const century = yy > new Date().getFullYear() % 100 ? 1900 : 2000
-                                  update("clientDob", `${century + yy}-${mm}-${dd}`)
+                                  const dob = `${century + yy}-${mm}-${dd}`
+                                  const age = String(new Date().getFullYear() - (century + yy))
+                                  setState(s => ({ ...s, clientIc: ic, clientDob: dob, clientAge: age }))
                                 }
                               }}
                               placeholder="901231011234 (without dashes)"
@@ -613,7 +617,11 @@ function NewCalculationWizard() {
                             <input
                               type="date"
                               value={state.clientDob}
-                              onChange={(e) => update("clientDob", e.target.value)}
+                              onChange={(e) => {
+                                const dob = e.target.value
+                                const age = dob ? String(new Date().getFullYear() - new Date(dob + "T00:00:00").getFullYear()) : ""
+                                setState(s => ({ ...s, clientDob: dob, clientAge: age }))
+                              }}
                               className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent"
                             />
                             {state.clientDob ? (
@@ -622,8 +630,32 @@ function NewCalculationWizard() {
                                 {maxTenureMonths !== undefined && ` · Max tenure: ${monthsToYearsMonths(maxTenureMonths)}`}
                               </p>
                             ) : (
-                              <p className="text-xs text-gray-400 mt-1">DD/MM/YYYY · auto-filled from IC</p>
+                              <p className="text-xs text-gray-400 mt-1">Auto-filled from IC · or enter age below</p>
                             )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-[#0A1628] mb-1.5">
+                              Age (years)
+                              <span className="text-xs text-gray-400 ml-1">(if no IC/DOB yet)</span>
+                            </label>
+                            <input
+                              type="number"
+                              min={18}
+                              max={70}
+                              value={state.clientAge}
+                              onChange={(e) => {
+                                const age = e.target.value
+                                update("clientAge", age)
+                                // Only derive DOB from age if IC/DOB not already set
+                                if (age && !state.clientDob) {
+                                  const year = new Date().getFullYear() - parseInt(age)
+                                  if (!isNaN(year)) update("clientDob", `${year}-01-01`)
+                                }
+                              }}
+                              placeholder="e.g. 35"
+                              className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent placeholder:text-gray-400"
+                            />
+                            <p className="text-xs text-gray-400 mt-1">Used for 70-year max tenure check</p>
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-[#0A1628] mb-1.5">

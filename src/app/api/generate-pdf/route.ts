@@ -127,7 +127,9 @@ export async function POST(request: Request) {
     }
 
     // Type assertion to access dynamic fields
-    const data = caseData as any
+    // Form data is stored in bank_form_data JSONB column; fall back to top-level for legacy rows
+    const raw = caseData as any
+    const data = { ...raw, ...(raw.bank_form_data || {}) }
 
     // Determine which bank form to use
     const bankType = data.selected_bank === 'hong_leong_bank' ? 'hong_leong_bank' : 'ocbc'

@@ -58,8 +58,7 @@ export default function AgentLayout({
   const handleLogout = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    toast.success("Signed out successfully")
-    router.push("/login")
+    window.location.href = "/login"
   }
 
   return (
