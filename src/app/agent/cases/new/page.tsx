@@ -441,10 +441,14 @@ function NewCasePageInner() {
     supabase.from('banks').select('id, name').eq('is_active', true).then(({ data }) => {
       if (!data) return
       const map: Record<string, string> = {}
+      // Normalize: strip non-alphanumeric chars for fuzzy matching (handles e.g. "Hong Leong Bank" vs "Hong Leong Bank (HLBB)")
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
       SUPPORTED_BANKS.forEach(b => {
-        const match = data.find((db: { id: string; name: string }) =>
-          db.name.toLowerCase() === b.name.toLowerCase()
-        )
+        const configNorm = normalize(b.name)
+        const match = data.find((db: { id: string; name: string }) => {
+          const dbNorm = normalize(db.name)
+          return dbNorm === configNorm || dbNorm.startsWith(configNorm) || configNorm.startsWith(dbNorm)
+        })
         if (match) map[b.id] = match.id
       })
       setBankDbIdMap(map)
@@ -842,6 +846,43 @@ function NewCasePageInner() {
     }
   })
 
+  // Upsert client record from form data. Returns client id or null if insufficient data.
+  const upsertClient = async (supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> => {
+    const icNumber = formData.client_ic || formData.client_passport || formData.client_other_id
+    if (!icNumber || !formData.client_name) return null
+    try {
+      // Check if client already exists by IC
+      const { data: existing } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('ic_number', icNumber)
+        .maybeSingle()
+      if (existing) return existing.id
+
+      const { data: newClient, error } = await supabase
+        .from('clients')
+        .insert({
+          full_name: formData.client_name,
+          ic_number: icNumber,
+          phone: formData.client_phone || '',
+          email: formData.client_email || null,
+          date_of_birth: formData.client_dob || null,
+          gender: formData.gender || null,
+          marital_status: formData.marital_status || null,
+          address: formData.home_address || null,
+          employer: formData.employer_name || null,
+          monthly_income: formData.monthly_income ? parseFloat(formData.monthly_income) : null,
+          created_by: userId,
+        })
+        .select('id')
+        .single()
+      if (error) throw error
+      return newClient?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
   const handleSaveDraft = async () => {
     if (!formData.loan_type) {
       alert('Please select a loan type before saving as draft.')
@@ -857,9 +898,12 @@ function NewCasePageInner() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
+      const clientId = await upsertClient(supabase, user.id)
+      const payload = { ...buildCasePayload(user.id), client_id: clientId }
+
       const { data, error } = await supabase
         .from('cases')
-        .insert([buildCasePayload(user.id) as any])
+        .insert([payload as any])
         .select()
         .single()
 
@@ -900,7 +944,8 @@ function NewCasePageInner() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      const caseData = buildCasePayload(user.id)
+      const clientId = await upsertClient(supabase, user.id)
+      const caseData = { ...buildCasePayload(user.id), client_id: clientId }
 
       const { data, error } = await supabase
         .from('cases')
