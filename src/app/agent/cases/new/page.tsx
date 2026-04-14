@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Check, Loader2, Plus, X, Save, FileText } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -164,7 +164,9 @@ interface OtherFinancingFacility {
 }
 
 interface CaseFormData {
+  loan_type: string
   selected_bank: string
+  proposed_bank_db_id: string
   client_title: string
   client_name: string
   id_type: string
@@ -282,7 +284,9 @@ interface CaseFormData {
 }
 
 const initialForm: CaseFormData = {
+  loan_type: '',
   selected_bank: '',
+  proposed_bank_db_id: '',
   client_title: '',
   client_name: '',
   id_type: 'nric',
@@ -405,7 +409,7 @@ const formatTenureFromMonths = (months: number | null): string => {
   return years.toString()
 }
 
-export default function NewCasePage() {
+function NewCasePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const calculationId = searchParams.get('from_calculation')
@@ -428,6 +432,26 @@ export default function NewCasePage() {
     phone: string | null
   }>>([])
 
+  // Map from bank config ID (e.g. 'hong_leong_bank') → DB UUID
+  const [bankDbIdMap, setBankDbIdMap] = useState<Record<string, string>>({})
+
+  // Load DB bank UUIDs on mount so bank selection can store proposed_bank_id
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('banks').select('id, name').eq('is_active', true).then(({ data }) => {
+      if (!data) return
+      const map: Record<string, string> = {}
+      SUPPORTED_BANKS.forEach(b => {
+        const match = data.find((db: { id: string; name: string }) =>
+          db.name.toLowerCase() === b.name.toLowerCase()
+        )
+        if (match) map[b.id] = match.id
+      })
+      setBankDbIdMap(map)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const bankSpecificSteps = bankConfig ? getTotalSections(bankConfig) : 0
   const totalSteps = 4 + bankSpecificSteps // Step 1: Bank, Step 2: Client, Step 3: Co-Borrowers, Step 4: Lawyer, then bank sections
 
@@ -443,62 +467,41 @@ export default function NewCasePage() {
   // Fetch panel lawyers when bank changes
   useEffect(() => {
     const fetchPanelLawyers = async () => {
-      if (!formData.selected_bank) {
+      const dbBankId = formData.proposed_bank_db_id
+      if (!dbBankId) {
         setAvailableLawyers([])
         return
       }
-
       try {
         const supabase = createClient()
-
-        // Resolve the human-readable bank name from the bank ID (e.g. 'hong_leong_bank' → 'Hong Leong Bank')
-        const config = getBankFormConfig(formData.selected_bank)
-        const bankName = config?.bankName || formData.selected_bank
-
-        // Get bank ID first
-        const { data: bankData } = await supabase
-          .from('banks')
-          .select('id')
-          .eq('name', bankName)
-          .maybeSingle()
-        
-        if (!bankData) {
-          setAvailableLawyers([])
-          return
-        }
-        
-        // Fetch lawyers panel for this bank via association table
         const { data: associations } = await supabase
           .from('lawyer_bank_associations')
           .select('lawyer_id')
-          .eq('bank_id', bankData.id)
+          .eq('bank_id', dbBankId)
           .eq('is_panel', true)
-        
+
         if (!associations || associations.length === 0) {
           setAvailableLawyers([])
           return
         }
-        
-        const lawyerIds = associations.map(a => a.lawyer_id)
-        
+
+        const lawyerIds = associations.map((a: { lawyer_id: string }) => a.lawyer_id)
         const { data: lawyers, error } = await supabase
           .from('lawyers')
           .select('id, name, firm, general_email, phone')
           .in('id', lawyerIds)
           .eq('is_active', true)
           .order('name')
-        
+
         if (error) throw error
-        
         setAvailableLawyers(lawyers || [])
       } catch (error) {
         console.error('Error fetching panel lawyers:', error)
         setAvailableLawyers([])
       }
     }
-    
     fetchPanelLawyers()
-  }, [formData.selected_bank])
+  }, [formData.proposed_bank_db_id])
 
   useEffect(() => {
     if (calculationId) {
@@ -521,9 +524,17 @@ export default function NewCasePage() {
 
       const calc = calculation as any
 
+      // Resolve bank config ID from DB bank name (e.g. "OCBC Bank" → "ocbc_bank")
+      const calcBankName: string = calc.proposed_bank?.name || ''
+      const matchedBank = SUPPORTED_BANKS.find(b => b.name.toLowerCase() === calcBankName.toLowerCase())
+      const calcBankConfigId = matchedBank?.id || ''
+      const calcBankDbId = calc.proposed_bank?.id || ''
+
       const mappedData: CaseFormData = {
         ...initialForm,
-        selected_bank: calc.proposed_bank?.name || '',
+        loan_type: calc.loan_type || '',
+        selected_bank: calcBankConfigId,
+        proposed_bank_db_id: calcBankDbId,
         client_title: calc.client_title || 'mr',
         client_name: calc.client_name || '',
         client_ic: calc.client_ic || '',
@@ -610,6 +621,9 @@ export default function NewCasePage() {
     const newErrors: Record<string, string> = {}
 
     if (step === 1) {
+      if (!formData.loan_type) {
+        newErrors.loan_type = 'Please select a loan type'
+      }
       if (!formData.selected_bank) {
         newErrors.selected_bank = 'Please select a bank'
       }
@@ -718,7 +732,8 @@ export default function NewCasePage() {
   // Build the case payload from current formData (shared by draft + submit)
   const buildCasePayload = (agentId: string) => ({
     agent_id: agentId,
-    selected_bank: formData.selected_bank,
+    loan_type: formData.loan_type || 'refinance',
+    proposed_bank_id: formData.proposed_bank_db_id || null,
     status: 'draft',
     bank_form_data: {
       client_title: formData.client_title,
@@ -828,6 +843,10 @@ export default function NewCasePage() {
   })
 
   const handleSaveDraft = async () => {
+    if (!formData.loan_type) {
+      alert('Please select a loan type before saving as draft.')
+      return
+    }
     if (!formData.selected_bank) {
       alert('Please select a bank before saving as draft.')
       return
@@ -1237,37 +1256,71 @@ export default function NewCasePage() {
   }
 
   const renderStep1_BankSelection = () => {
+    const loanTypes = [
+      { value: 'refinance', label: 'Refinance', desc: 'Refinance an existing loan' },
+      { value: 'subsale', label: 'Subsale', desc: 'Secondary market property purchase' },
+      { value: 'developer', label: 'Developer', desc: 'New property from developer' },
+    ]
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Select Bank</h2>
-          <p className="text-gray-600 mt-1">Choose the bank for this case application</p>
+          <h2 className="text-2xl font-bold text-gray-900">Loan Type & Bank</h2>
+          <p className="text-gray-600 mt-1">Select the loan type and target bank</p>
         </div>
 
+        {/* Loan Type */}
         <Card>
           <CardContent className="p-6">
+            <h3 className="text-base font-semibold text-gray-800 mb-3">Loan Type *</h3>
+            <div className="grid grid-cols-3 gap-3">
+              {loanTypes.map(lt => (
+                <button
+                  key={lt.value}
+                  type="button"
+                  onClick={() => handleInputChange('loan_type', lt.value)}
+                  className={cn(
+                    "p-4 border-2 rounded-lg text-left transition-all",
+                    formData.loan_type === lt.value
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  )}
+                >
+                  <div className="font-semibold text-sm">{lt.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{lt.desc}</div>
+                </button>
+              ))}
+            </div>
+            {errors.loan_type && <p className="text-red-500 text-sm mt-2">{errors.loan_type}</p>}
+          </CardContent>
+        </Card>
+
+        {/* Bank Selection */}
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-base font-semibold text-gray-800 mb-3">Bank *</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {SUPPORTED_BANKS.map((bank) => (
                 <button
                   key={bank.id}
+                  type="button"
                   onClick={() => {
-                    handleInputChange('selected_bank', bank.id)
-                    // Auto-advance to next step after bank selection for better UX
-                    setTimeout(() => setCurrentStep(2), 100)
+                    setFormData(prev => ({
+                      ...prev,
+                      selected_bank: bank.id,
+                      proposed_bank_db_id: bankDbIdMap[bank.id] || '',
+                    }))
                   }}
                   className={cn(
-                    "p-6 border-2 rounded-lg transition-all text-left",
+                    "p-5 border-2 rounded-lg transition-all text-left",
                     formData.selected_bank === bank.id
                       ? "border-blue-500 bg-blue-50"
                       : "border-gray-200 hover:border-gray-300"
                   )}
                 >
-                  <h3 className="font-semibold text-lg">{bank.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1 capitalize">{bank.id.replace(/_/g, ' ')}</p>
+                  <h3 className="font-semibold">{bank.name}</h3>
                 </button>
               ))}
             </div>
-            
             {errors.selected_bank && (
               <p className="text-red-500 text-sm mt-2">{errors.selected_bank}</p>
             )}
@@ -1655,5 +1708,13 @@ export default function NewCasePage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function NewCasePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+      <NewCasePageInner />
+    </Suspense>
   )
 }

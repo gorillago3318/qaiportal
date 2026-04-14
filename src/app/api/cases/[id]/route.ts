@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCallerProfile } from '@/lib/supabase/admin'
+import { getAdminClient, getCallerProfile } from '@/lib/supabase/admin'
+import {
+  calculateBankCommission,
+  calculateLawyerCommission,
+  isPanelLawyer,
+  getSuperAdminId,
+} from '@/lib/commission/engine'
 
 function getSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
@@ -221,6 +227,121 @@ export async function PATCH(
           type: 'case_update',
           case_id: id,
         })
+      }
+    }
+
+    // ── Auto-commission on accepted ──────────────────────────────
+    if (newStatus === 'accepted') {
+      try {
+        const adminClient = getAdminClient()
+
+        // Check no existing commission
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: existingComm }: { data: any } = await (adminClient as any)
+          .from('commissions').select('id').eq('case_id', id).limit(1).maybeSingle()
+
+        if (!existingComm) {
+          // Fetch full case data needed for commission
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: fullCase }: { data: any } = await (adminClient as any)
+            .from('cases')
+            .select('agent_id, agency_id, proposed_loan_amount, proposed_bank_id, bank_form_data, case_code')
+            .eq('id', id).single()
+
+          if (fullCase?.proposed_loan_amount && fullCase?.proposed_bank_id) {
+            // Fetch bank commission rate
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: bank }: { data: any } = await (adminClient as any)
+              .from('banks').select('commission_rate').eq('id', fullCase.proposed_bank_id).single()
+
+            const bankGross = fullCase.proposed_loan_amount * (bank?.commission_rate ?? 0)
+
+            // Load tier config
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: configs }: { data: any } = await (adminClient as any)
+              .from('commission_tier_config').select('tier, percentage').eq('agency_id', fullCase.agency_id)
+            const configMap: Record<string, number> = {}
+            configs?.forEach((c: { tier: string; percentage: number }) => { configMap[c.tier] = c.percentage })
+
+            const superAdminId = await getSuperAdminId(adminClient)
+            const bfd = (fullCase.bank_form_data || {}) as Record<string, unknown>
+            const lawyerId = (bfd.lawyer_id as string | undefined) || null
+            const panelConfirmed = await isPanelLawyer(adminClient, lawyerId)
+
+            const bankResult = await calculateBankCommission({
+              caseId: id,
+              caseAgentId: fullCase.agent_id,
+              agencyId: fullCase.agency_id,
+              bankGross,
+              adminOverride: 0,
+              panelLawyerConfirmed: panelConfirmed,
+              adminClient,
+              configMap,
+              superAdminId,
+            })
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (adminClient as any).from('commissions').insert({
+              type: 'bank', case_id: id,
+              gross_amount: bankResult.gross,
+              discount_amount: bankResult.flatDeduction + bankResult.panelDeduction,
+              net_distributable: bankResult.netDistributable,
+              company_cut: bankResult.tierBreakdown.breakdown[superAdminId ?? '']?.amount ?? 0,
+              tier_breakdown: {
+                ...bankResult.tierBreakdown.breakdown,
+                _co_broke: bankResult.coBroke.hasCoBroke ? {
+                  referrer_agent_id: bankResult.coBroke.referrerAgentId,
+                  referrer_amount: bankResult.coBroke.referrerAmount,
+                  doer_agent_id: bankResult.coBroke.doerAgentId,
+                  doer_pool: bankResult.coBroke.doerPool,
+                } : null,
+              },
+              commission_notes: bankResult.notes,
+              status: 'calculated',
+            })
+
+            // Lawyer commission if panel + fee present
+            const professionalFee = parseFloat(String(bfd.lawyer_professional_fee || '0')) || 0
+            if (panelConfirmed && professionalFee > 0) {
+              const lwResult = await calculateLawyerCommission({
+                caseId: id, caseAgentId: fullCase.agent_id,
+                professionalFee, adminClient, configMap, superAdminId,
+              })
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await (adminClient as any).from('commissions').insert({
+                type: 'lawyer', case_id: id,
+                gross_amount: lwResult.gross,
+                discount_amount: lwResult.companyCut,
+                net_distributable: lwResult.netDistributable,
+                company_cut: lwResult.tierBreakdown.breakdown[superAdminId ?? '']?.amount ?? 0,
+                tier_breakdown: { ...lwResult.tierBreakdown.breakdown },
+                commission_notes: lwResult.notes,
+                status: 'calculated',
+              })
+            }
+
+            // Advance case to payment_pending
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (adminClient as any).from('cases').update({ status: 'payment_pending' }).eq('id', id)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (adminClient as any).from('case_status_history').insert({
+              case_id: id, from_status: 'accepted', to_status: 'payment_pending',
+              changed_by: user.id, notes: 'Commission auto-calculated on acceptance.',
+            })
+
+            // Notify agent
+            const agentAmt = bankResult.tierBreakdown.breakdown[fullCase.agent_id]?.amount ?? 0
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (adminClient as any).from('notifications').insert({
+              user_id: fullCase.agent_id, case_id: id,
+              title: 'Commission Calculated',
+              message: `Case ${fullCase.case_code}: Bank commission RM${agentAmt.toFixed(2)} calculated. Awaiting payment.`,
+            })
+          }
+        }
+      } catch (commErr) {
+        // Commission failure must not block the acceptance — log and continue
+        console.error('Auto-commission error (non-fatal):', commErr)
       }
     }
 
