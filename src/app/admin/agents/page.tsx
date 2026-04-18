@@ -188,51 +188,51 @@ export default function AdminAgentsPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[400px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-6 py-3 font-medium text-gray-500">Agent</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Code</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Role</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Upline</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-                    <th className="px-6 py-3" />
+                    <th className="text-left px-3 sm:px-6 py-3 font-medium text-gray-500">Agent</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Code</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500">Role</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Upline</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500">Status</th>
+                    <th className="px-3 sm:px-6 py-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {agents.map((a) => (
                     <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-[#0A1628] flex items-center justify-center flex-shrink-0">
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-[#0A1628] flex items-center justify-center flex-shrink-0">
                             <span className="text-white text-xs font-semibold">{a.full_name[0]?.toUpperCase()}</span>
                           </div>
-                          <div>
-                            <div className="font-medium text-[#0A1628]">{a.full_name}</div>
-                            <div className="text-xs text-gray-400">{a.email}</div>
+                          <div className="min-w-0">
+                            <div className="font-medium text-[#0A1628] text-xs sm:text-sm truncate">{a.full_name}</div>
+                            <div className="text-xs text-gray-400 truncate hidden sm:block">{a.email}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 sm:px-4 py-3 sm:py-4 hidden sm:table-cell">
                         <span className="font-mono text-xs text-gray-600">{a.agent_code || "—"}</span>
                       </td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[a.role]}`}>
+                      <td className="px-3 sm:px-4 py-3 sm:py-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[a.role]}`}>
                           {USER_ROLE_LABELS[a.role]}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-500">
+                      <td className="px-3 sm:px-4 py-3 sm:py-4 text-sm text-gray-500 hidden md:table-cell">
                         {a.upline_id ? <span className="text-xs font-mono text-gray-400">{a.upline_id.slice(0, 8)}…</span> : "—"}
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 sm:px-4 py-3 sm:py-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           a.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
                         }`}>
                           {a.is_active ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
                         <Link href={`/admin/agents/${a.id}`}>
                           <Button variant="outline" size="sm">View</Button>
                         </Link>

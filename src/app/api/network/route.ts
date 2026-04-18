@@ -41,8 +41,7 @@ export async function GET() {
       .from('profiles')
       .select(`
         id, full_name, email, role, agent_code, upline_id, is_active,
-        cases:cases(count),
-        commissions:commissions(net_distributable, status)
+        cases:cases(count)
       `)
       .not('role', 'in', '(super_admin,admin)')
       .order('role', { ascending: true })
@@ -51,27 +50,46 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Fetch commissions separately (no direct FK from profiles→commissions;
+    // link is: commissions.case_id → cases.agent_id → profiles.id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: commRows } = await (adminClient as any)
+      .from('commissions')
+      .select('net_distributable, status, created_at, cases!inner(agent_id)')
+
+    // Build a map: agent_id → commission rows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const commByAgent: Record<string, { amount: number; created_at: string }[]> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const row of (commRows ?? []) as any[]) {
+      if (row.status !== 'paid') continue
+      const agentId = row.cases?.agent_id
+      if (!agentId) continue
+      if (!commByAgent[agentId]) commByAgent[agentId] = []
+      commByAgent[agentId].push({ amount: row.net_distributable ?? 0, created_at: row.created_at })
+    }
+
     // Build set of valid (non-admin) IDs
     const agentIds = new Set((data || []).map((p: { id: string }) => p.id))
 
     // Enrich with commission totals
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const enriched = (data || []).map((p: any) => ({
-      id: p.id,
-      full_name: p.full_name,
-      email: p.email,
-      role: p.role,
-      agent_code: p.agent_code,
-      // Map to QAI root if: upline_id is null, OR upline_id points to excluded user (admin)
-      upline_id: (!p.upline_id || !agentIds.has(p.upline_id)) ? '__QAI_ROOT__' : p.upline_id,
-      is_active: p.is_active,
-      case_count: p.cases?.[0]?.count ?? 0,
-      commission_earned: (p.commissions ?? [])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((c: any) => c.status === 'paid')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .reduce((sum: number, c: any) => sum + (c.net_distributable ?? 0), 0),
-    }))
+    const enriched = (data || []).map((p: any) => {
+      const rawComms = commByAgent[p.id] ?? []
+      return {
+        id: p.id,
+        full_name: p.full_name,
+        email: p.email,
+        role: p.role,
+        agent_code: p.agent_code,
+        // Map to QAI root if: upline_id is null, OR upline_id points to excluded user (admin)
+        upline_id: (!p.upline_id || !agentIds.has(p.upline_id)) ? '__QAI_ROOT__' : p.upline_id,
+        is_active: p.is_active,
+        case_count: p.cases?.[0]?.count ?? 0,
+        commission_earned: rawComms.reduce((sum: number, c) => sum + c.amount, 0),
+        raw_commissions: rawComms,
+      }
+    })
 
     // Inject the QAI root virtual node
     const qaiRoot = {

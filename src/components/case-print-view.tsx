@@ -3,14 +3,22 @@
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Printer, X, FileText, Download, Loader2 } from 'lucide-react'
+import { HLBFormPreview } from '@/components/hlb-form-preview'
 
 interface CasePrintViewProps {
   caseData: any
   onClose: () => void
+  /** Pass the bank config id (e.g. 'hlb') so we can show the correct form template */
+  bankId?: string
 }
 
-export function CasePrintView({ caseData, onClose }: CasePrintViewProps) {
+export function CasePrintView({ caseData, onClose, bankId }: CasePrintViewProps) {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+
+  // ── HLB: use the dedicated overlay preview ──────────────────────────────────
+  if (bankId === 'hong_leong_bank' || bankId === 'hlb') {
+    return <HLBFormPreview data={caseData} onClose={onClose} />
+  }
   
   const handlePrint = () => {
     window.print()
@@ -466,7 +474,7 @@ export function CasePrintView({ caseData, onClose }: CasePrintViewProps) {
 
           {/* Footer */}
           <div className="mt-12 pt-6 border-t-2 border-gray-300 text-center text-xs text-gray-500">
-            <p>This form was generated on {new Date().toLocaleDateString('en-GB')} at {new Date().toLocaleTimeString('en-GB')}</p>
+            <p>This form was generated on {(() => { const n = new Date(); return `${String(n.getDate()).padStart(2,'0')}/${String(n.getMonth()+1).padStart(2,'0')}/${n.getFullYear()} ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}` })()}</p>
             <p className="mt-1">Case Code: {caseData.case_code || 'DRAFT'} | Status: {caseData.status || 'Draft'}</p>
             <p className="mt-2 italic">Note: This is a computer-generated form. Please review all information carefully before signing.</p>
           </div>

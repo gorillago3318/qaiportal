@@ -5,7 +5,7 @@ import { DollarSign, X } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import { LOAN_TYPE_LABELS } from "@/types/database"
 
 type CommissionRow = {
@@ -165,17 +165,17 @@ export default function AdminCommissionsPage() {
               <p className="text-gray-400 text-sm">Commissions are created when cases reach approved status</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[460px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-6 py-3 font-medium text-gray-500">Case</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Agent</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500">Gross</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500">Net Distributable</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-                    <th className="px-6 py-3" />
+                    <th className="text-left px-3 sm:px-6 py-3 font-medium text-gray-500">Case</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Agent</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Type</th>
+                    <th className="text-right px-3 sm:px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Gross</th>
+                    <th className="text-right px-3 sm:px-4 py-3 font-medium text-gray-500">Net Distributable</th>
+                    <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500">Status</th>
+                    <th className="px-3 sm:px-6 py-3" />
                   </tr>
                 </thead>
                 <tbody>
@@ -183,31 +183,31 @@ export default function AdminCommissionsPage() {
                     const caseData = c.case as typeof c.case
                     return (
                       <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <div className="font-mono font-medium text-xs text-[#0A1628]">{caseData?.case_code || "—"}</div>
                           <div className="text-xs text-gray-400">
                             {caseData?.loan_type ? (LOAN_TYPE_LABELS[caseData.loan_type as keyof typeof LOAN_TYPE_LABELS] || caseData.loan_type) : ""}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 hidden sm:table-cell">
                           <div className="text-[#0A1628]">{caseData?.agent?.full_name || "—"}</div>
                           <div className="text-xs text-gray-400">{caseData?.agent?.agent_code || ""}</div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 hidden md:table-cell">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             c.type === "bank" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
                           }`}>
                             {c.type === "bank" ? "Bank" : "Lawyer"}
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-right font-medium text-[#0A1628]">{formatCurrency(c.gross_amount)}</td>
-                        <td className="px-4 py-4 text-right font-medium text-[#0A1628]">{formatCurrency(c.net_distributable)}</td>
-                        <td className="px-4 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[c.status] || "bg-gray-100 text-gray-600"}`}>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-right font-medium text-[#0A1628] hidden md:table-cell">{formatCurrency(c.gross_amount)}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-right font-medium text-[#0A1628]">{formatCurrency(c.net_distributable)}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[c.status] || "bg-gray-100 text-gray-600"}`}>
                             {c.status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">
                           {c.status !== "paid" && (
                             <Button
                               size="sm"
@@ -219,7 +219,7 @@ export default function AdminCommissionsPage() {
                           )}
                           {c.status === "paid" && (
                             <div className="text-xs text-gray-400">
-                              {c.paid_at ? new Date(c.paid_at).toLocaleDateString("en-MY") : "Paid"}
+                              {c.paid_at ? formatDate(c.paid_at) : "Paid"}
                             </div>
                           )}
                         </td>

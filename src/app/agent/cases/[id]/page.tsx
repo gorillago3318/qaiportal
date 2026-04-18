@@ -359,7 +359,7 @@ function Stage2Panel({ caseId, caseData, onRefresh }: { caseId: string; caseData
                   <div>
                     <span className="font-medium text-[#0A1628]">{r.lawyer_name}</span>
                     <span className="text-gray-400 ml-2">{r.template_types.join(' + ')}</span>
-                    <span className="text-gray-400 ml-2">{new Date(r.sent_at).toLocaleString('en-MY', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                    <span className="text-gray-400 ml-2">{formatDateTime(r.sent_at)}</span>
                   </div>
                   {r.email_sent
                     ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sent</span>
@@ -548,6 +548,11 @@ export default function AgentCaseDetailPage() {
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [lawyerQuotationUrl, setLawyerQuotationUrl] = useState('')
   const [submittingCase, setSubmittingCase] = useState(false)
+
+  // Accept case (approved → accepted) with LO upload
+  const [showAcceptModal, setShowAcceptModal] = useState(false)
+  const [loFile, setLoFile] = useState<File | null>(null)
+  const [acceptingCase, setAcceptingCase] = useState(false)
   const commentsEndRef = useRef<HTMLDivElement>(null)
 
   // Document states
@@ -697,6 +702,54 @@ export default function AgentCaseDetailPage() {
     }
   }
 
+  const handleAcceptCase = async () => {
+    if (!loFile) {
+      toast.error('Please upload the signed Letter of Offer first')
+      return
+    }
+    setAcceptingCase(true)
+    try {
+      const supabaseClient = createClient()
+      const ext = loFile.name.split('.').pop()
+      const fileName = `${id}/signed_lo_${Date.now()}.${ext}`
+      const { error: uploadError } = await supabaseClient.storage
+        .from('case-documents')
+        .upload(fileName, loFile)
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
+
+      const { data: publicUrlData } = supabaseClient.storage
+        .from('case-documents')
+        .getPublicUrl(fileName)
+
+      const res = await fetch(`/api/cases/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'accepted',
+          notes: 'Agent accepted case with signed Letter of Offer.',
+          new_documents: [{
+            document_type: 'Signed Letter of Offer',
+            file_name: loFile.name,
+            file_url: publicUrlData.publicUrl,
+            file_size: loFile.size,
+          }],
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json()
+        throw new Error(j.error || 'Failed to accept case')
+      }
+      toast.success('Case accepted! Lawyer will be notified to begin LA preparation.')
+      setShowAcceptModal(false)
+      setLoFile(null)
+      await fetchCase()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to accept case')
+    } finally {
+      setAcceptingCase(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6 max-w-5xl">
@@ -768,7 +821,7 @@ export default function AgentCaseDetailPage() {
         </div>
         {c.status === 'draft' && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => router.push(`/agent/cases/new?id=${id}`)}>
               <Edit className="h-4 w-4" />
               Edit Case
             </Button>
@@ -777,6 +830,12 @@ export default function AgentCaseDetailPage() {
               Submit Case
             </Button>
           </div>
+        )}
+        {c.status === 'approved' && (
+          <Button variant="gold" size="sm" onClick={() => setShowAcceptModal(true)}>
+            <CheckCircle2 className="h-4 w-4" />
+            Accept Case
+          </Button>
         )}
       </div>
 
@@ -1049,7 +1108,7 @@ export default function AgentCaseDetailPage() {
               </div>
 
               <div className="space-y-3 pt-4 border-t">
-                <h3 className="text-sm font-semibold text-[#0A1628]">Lawyer Selection <span className="text-red-500">*</span></h3>
+                <h3 className="text-sm font-semibold text-[#0A1628]">Lawyer <span className="text-red-500">*</span></h3>
                 <div className="grid grid-cols-3 gap-2">
                   {(['LWZ', 'YG', 'external'] as const).map(opt => (
                     <button
@@ -1128,6 +1187,58 @@ export default function AgentCaseDetailPage() {
                 >
                   {submittingCase ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   {submittingCase ? 'Uploading...' : 'Upload & Submit'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accept Case Modal (approved → accepted) */}
+      {showAcceptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-in fade-in zoom-in duration-200">
+            <h2 className="text-xl font-bold text-[#0A1628] mb-1">Accept Case</h2>
+            <p className="text-sm text-gray-500 mb-6 border-b pb-4">
+              Upload the bank-signed Letter of Offer to confirm acceptance.
+            </p>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-[#0A1628] mb-2">
+                  Signed Letter of Offer <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-[#F3F4F6] file:text-[#0A1628] hover:file:bg-[#E5E7EB] cursor-pointer border rounded-lg pl-1 py-1"
+                  onChange={(e) => setLoFile(e.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-gray-400 mt-1">Accepted formats: PDF, JPG, PNG</p>
+              </div>
+
+              {loFile && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg text-xs text-green-700">
+                  <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+                  {loFile.name} ({(loFile.size / 1024).toFixed(1)} KB)
+                </div>
+              )}
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800">
+                Once accepted, you cannot edit the case. The lawyer will be notified to begin LA preparation.
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <Button variant="outline" onClick={() => { setShowAcceptModal(false); setLoFile(null) }} disabled={acceptingCase}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="gold"
+                  onClick={handleAcceptCase}
+                  disabled={acceptingCase || !loFile}
+                >
+                  {acceptingCase ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
+                  {acceptingCase ? 'Uploading...' : 'Confirm Accept'}
                 </Button>
               </div>
             </div>

@@ -5,11 +5,12 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   ArrowLeft, User, Building2, MapPin, Landmark, Clock, MessageSquare, CheckCircle2, Send,
+  FileText, Loader2,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { formatCurrency, monthsToYearsMonths } from "@/lib/utils"
+import { formatCurrency, formatDate, formatDateTime, monthsToYearsMonths } from "@/lib/utils"
 import { CASE_STATUS_LABELS, LOAN_TYPE_LABELS, type CaseStatus } from "@/types/database"
 
 const STATUS_COLORS: Record<CaseStatus, string> = {
@@ -120,6 +121,8 @@ export default function AdminCaseDetailPage() {
     valuer_2_firm: "", valuer_2_name: "", valuer_2_date: "", valuer_2_amount: "" as string | number,
   })
   const [savingValuation, setSavingValuation] = React.useState(false)
+  const [sendingToLawyer, setSendingToLawyer] = React.useState(false)
+  const [laPreparationSent, setLaPreparationSent] = React.useState<string | null>(null)
 
   const fetchCase = React.useCallback(async () => {
     const res = await fetch(`/api/cases/${id}`)
@@ -128,6 +131,12 @@ export default function AdminCaseDetailPage() {
       setCaseData(json.data)
       setAdminRemarks(json.data.admin_remarks || "")
       setNewStatus(json.data.status)
+      // Check if LA prep already sent
+      const bfd = json.data.bank_form_data as Record<string, unknown> | null
+      if (bfd?.la_preparation_sent) {
+        const entry = bfd.la_preparation_sent as { sent_at: string }
+        setLaPreparationSent(entry.sent_at)
+      }
       setValuationData({
         valuer_1_firm: json.data.valuer_1_firm || "",
         valuer_1_name: json.data.valuer_1_name || "",
@@ -178,6 +187,30 @@ export default function AdminCaseDetailPage() {
   }, [id, router])
 
   React.useEffect(() => { fetchCase() }, [fetchCase])
+
+  const handleSendToLawyer = async () => {
+    setSendingToLawyer(true)
+    try {
+      const res = await fetch(`/api/cases/${id}/send-to-lawyer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const j = await res.json()
+      if (!res.ok) { toast.error(j.error || "Failed to send"); return }
+      if (j.email_sent) {
+        toast.success("Documents sent to lawyer for LA preparation")
+      } else {
+        toast.success(`Logged — ${j.email_error || "email not configured"}`)
+      }
+      setLaPreparationSent(new Date().toISOString())
+      fetchCase()
+    } catch {
+      toast.error("Request failed")
+    } finally {
+      setSendingToLawyer(false)
+    }
+  }
 
   const handleStatusUpdate = async () => {
     if (!newStatus || newStatus === caseData?.status) return
@@ -305,7 +338,7 @@ export default function AdminCaseDetailPage() {
             </span>
           </div>
           <p className="text-sm text-gray-400 mt-0.5">
-            Created {new Date(caseData.created_at).toLocaleDateString("en-MY", { day: "2-digit", month: "long", year: "numeric" })}
+            Created {formatDate(caseData.created_at)}
           </p>
         </div>
       </div>
@@ -582,7 +615,7 @@ export default function AdminCaseDetailPage() {
                           <span className="font-medium text-[#0A1628] text-xs">{c.author?.full_name || "Unknown"}</span>
                           {c.is_admin && <span className="text-[10px] text-[#C9A84C] font-semibold uppercase tracking-wide">Admin</span>}
                           <span className="text-xs text-gray-400 ml-auto">
-                            {new Date(c.created_at).toLocaleString("en-MY", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            {formatDateTime(c.created_at)}
                           </span>
                         </div>
                         <p className="text-gray-700">{c.content}</p>
@@ -655,6 +688,41 @@ export default function AdminCaseDetailPage() {
             </CardContent>
           </Card>
 
+          {caseData.status === "accepted" && (
+            <Card className="border-teal-200 bg-teal-50/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base text-teal-800">
+                  <FileText className="h-4 w-4 text-teal-600" /> LA Preparation
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {laPreparationSent ? (
+                  <div className="flex items-start gap-2 text-xs text-teal-700">
+                    <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                    <span>Sent for LA prep on {new Date(laPreparationSent).toLocaleDateString("en-GB")}</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Send the document package to the lawyer to begin Loan Agreement preparation.
+                  </p>
+                )}
+                <Button
+                  onClick={handleSendToLawyer}
+                  disabled={sendingToLawyer || !!laPreparationSent}
+                  size="sm"
+                  className="w-full bg-teal-700 hover:bg-teal-800 text-white"
+                >
+                  {sendingToLawyer
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Sending…</>
+                    : laPreparationSent
+                      ? <><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Already Sent</>
+                      : <><Send className="h-3.5 w-3.5 mr-1.5" /> Send for LA Preparation</>
+                  }
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
 
           <Card>
             <CardHeader className="pb-3">
@@ -676,7 +744,7 @@ export default function AdminCaseDetailPage() {
                           </p>
                           {h.notes && <p className="text-xs text-gray-500">{h.notes}</p>}
                           <p className="text-[11px] text-gray-400 mt-0.5">
-                            {h.changed_by_profile?.full_name} · {new Date(h.created_at).toLocaleString("en-MY", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            {h.changed_by_profile?.full_name} · {formatDateTime(h.created_at)}
                           </p>
                         </div>
                       </div>

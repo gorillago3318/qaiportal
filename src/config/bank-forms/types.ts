@@ -1,6 +1,6 @@
 // Type definitions for dynamic bank form configuration
 
-export type FieldType = 
+export type FieldType =
   | 'text'
   | 'number'
   | 'email'
@@ -12,6 +12,7 @@ export type FieldType =
   | 'textarea'
   | 'currency'
   | 'percentage'
+  | 'group_header'
 
 export interface FieldOption {
   label: string
@@ -40,6 +41,8 @@ export interface FormField {
     custom_logic?: (formData: Record<string, any>) => boolean
   }
   gridColumn?: 1 | 2 // Span 1 or 2 columns in grid
+  // For radio fields: renders an inline RM input when value === 'yes'
+  sub_field?: { id: string; label: string }
 }
 
 export interface FormSection {

@@ -161,24 +161,24 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground">
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
             Admin Dashboard
           </h1>
           <p className="text-[#5F5F67] text-sm mt-1">Overview of cases, agents, and commissions</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Button variant="outline" size="sm" asChild>
             <Link href="/admin/agents">
               <Users className="h-4 w-4" />
-              New Agent
+              <span className="hidden sm:inline">New Agent</span>
             </Link>
           </Button>
           <Button variant="gold" size="sm" asChild>
             <Link href="/admin/cases">
               <FolderOpen className="h-4 w-4" />
-              View All Cases
+              <span className="hidden sm:inline">View All Cases</span>
             </Link>
           </Button>
         </div>
@@ -288,30 +288,30 @@ export default function AdminDashboardPage() {
               <p className="font-medium text-foreground">No cases yet</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[420px]">
                 <thead>
                   <tr className="border-b border-[#E3E3E7] bg-[#F8F8FA]">
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Case Code</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Client</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Agent</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Loan Type</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Loan Amount</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Status</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Date</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">View</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Case</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Client</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider hidden sm:table-cell">Agent</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider hidden md:table-cell">Type</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider hidden md:table-cell">Amount</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider">Status</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#4D4D56] uppercase tracking-wider hidden sm:table-cell">Date</th>
+                    <th className="px-3 sm:px-6 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ECECF0]">
                   {data.recentCases.map((c) => (
                     <tr key={c.id} className="hover:bg-[#F5F5F8] transition-colors">
-                      <td className="px-6 py-3">
+                      <td className="px-3 sm:px-6 py-3">
                         <span className="font-mono text-xs font-semibold text-[#17171A]">{c.case_code}</span>
                       </td>
-                      <td className="px-6 py-3 font-medium text-[#17171A]">
+                      <td className="px-3 sm:px-6 py-3 font-medium text-[#17171A] text-xs sm:text-sm">
                         {c.client?.full_name || '—'}
                       </td>
-                      <td className="px-6 py-3">
+                      <td className="px-3 sm:px-6 py-3 hidden sm:table-cell">
                         <div>
                           <p className="text-[#2F2F36]">{c.agent?.full_name || '—'}</p>
                           {c.agent?.agent_code && (
@@ -319,17 +319,17 @@ export default function AdminDashboardPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-3 text-[#5F5F67]">{LOAN_TYPE_LABELS[c.loan_type]}</td>
-                      <td className="px-6 py-3 font-medium text-[#17171A]">
+                      <td className="px-3 sm:px-6 py-3 text-[#5F5F67] hidden md:table-cell">{LOAN_TYPE_LABELS[c.loan_type]}</td>
+                      <td className="px-3 sm:px-6 py-3 font-medium text-[#17171A] hidden md:table-cell">
                         {c.proposed_loan_amount ? formatCurrency(c.proposed_loan_amount) : '—'}
                       </td>
-                      <td className="px-6 py-3">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusColors[c.status]}`}>
+                      <td className="px-3 sm:px-6 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${statusColors[c.status]}`}>
                           {CASE_STATUS_LABELS[c.status]}
                         </span>
                       </td>
-                      <td className="px-6 py-3 text-[#5F5F67] text-xs">{formatDate(c.created_at)}</td>
-                      <td className="px-6 py-3">
+                      <td className="px-3 sm:px-6 py-3 text-[#5F5F67] text-xs hidden sm:table-cell">{formatDate(c.created_at)}</td>
+                      <td className="px-3 sm:px-6 py-3">
                         <Button variant="ghost" size="icon" asChild>
                           <Link href={`/admin/cases/${c.id}`}>
                             <Eye className="h-4 w-4" />

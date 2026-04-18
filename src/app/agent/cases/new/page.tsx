@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, Suspense } from 'react'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ArrowRight, Check, Loader2, Plus, X, Save, FileText, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle, Loader2, Plus, X, Save, FileText, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -414,7 +414,8 @@ function NewCasePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const calculationId = searchParams.get('from_calculation')
-  
+  const caseIdParam = searchParams.get('id')
+
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState<CaseFormData>(initialForm)
   const [bankConfig, setBankConfig] = useState<BankFormConfig | null>(null)
@@ -424,7 +425,89 @@ function NewCasePageInner() {
   const [showPrintView, setShowPrintView] = useState(false)
   const [savedCaseData, setSavedCaseData] = useState<any>(null)
   const [savedCaseId, setSavedCaseId] = useState<string | null>(null)
-  
+  const [restoredFromCache, setRestoredFromCache] = useState(false)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const isSavingRef = useRef(false)
+
+  // ── localStorage persistence key ─────────────────────────────
+  const LS_KEY = 'qai_new_case_draft'
+
+  // Restore from localStorage on mount
+  // Skip when ?id= param is present (loadExistingCase will handle it from DB)
+  // Skip when ?from_calculation= is present (fetchCalculationData clears stale cache first)
+  useEffect(() => {
+    if (caseIdParam || calculationId) return // DB source takes priority; skip stale cache
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (!raw) return
+      const saved = JSON.parse(raw)
+      // Expire after 48 hours
+      if (Date.now() - (saved.ts || 0) > 48 * 3600 * 1000) {
+        localStorage.removeItem(LS_KEY)
+        return
+      }
+      if (saved.formData?.selected_bank) {
+        setFormData(saved.formData as CaseFormData)
+        if (saved.savedCaseId) setSavedCaseId(saved.savedCaseId)
+        if (saved.currentStep) setCurrentStep(saved.currentStep)
+        setRestoredFromCache(true)
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist to localStorage whenever form data or step changes (debounced 800ms)
+  useEffect(() => {
+    if (!formData.selected_bank) return // don't persist an empty form
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          formData,
+          savedCaseId,
+          currentStep,
+          ts: Date.now(),
+        }))
+      } catch {}
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [formData, savedCaseId, currentStep])
+
+  // Auto-save to DB: 2 s after any formData change, silently in background.
+  // ONLY PATCHes an existing draft — never auto-creates a new case.
+  // First creation is always triggered explicitly (Save as Draft button or handleNext on step 1).
+  useEffect(() => {
+    if (!savedCaseId) return  // nothing to patch yet — wait for explicit first save
+    if (!formData.loan_type || !formData.selected_bank) return
+    const timer = setTimeout(async () => {
+      if (isSavingRef.current) return
+      isSavingRef.current = true
+      setAutoSaveStatus('saving')
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const clientId = await upsertClient(supabase, user.id)
+        const payload = { ...buildCasePayload(user.id), client_id: clientId }
+        const res = await fetch(`/api/cases/${savedCaseId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, client_id: undefined }),
+        })
+        if (!res.ok) throw new Error()
+        const { data: updated } = await res.json()
+        setSavedCaseData(updated)
+        setAutoSaveStatus('saved')
+        setTimeout(() => setAutoSaveStatus('idle'), 3000)
+      } catch {
+        setAutoSaveStatus('error')
+      } finally {
+        isSavingRef.current = false
+      }
+    }, 2000)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData, savedCaseId])
+
   // Lawyer selection state
   const [availableLawyers, setAvailableLawyers] = useState<Array<{
     id: string
@@ -542,13 +625,92 @@ function NewCasePageInner() {
     }
   }, [calculationId])
 
+  // Load existing draft when ?id= param is present (e.g. after save, or via Edit Case link)
+  useEffect(() => {
+    if (caseIdParam && !savedCaseId) {
+      loadExistingCase(caseIdParam)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseIdParam])
+
+  const loadExistingCase = async (id: string) => {
+    setIsLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: caseData, error } = await supabase
+        .from('cases')
+        .select('*, proposed_bank:banks(id, name)')
+        .eq('id', id)
+        .single()
+      if (error || !caseData) {
+        // Case doesn't exist (e.g. DB was wiped) — clear stale localStorage so we don't
+        // show old data on next navigation
+        try { localStorage.removeItem(LS_KEY) } catch {}
+        setSavedCaseId(null)
+        setSavedCaseData(null)
+        return
+      }
+
+      const c = caseData as any
+      const bankData: Record<string, any> = c.bank_form_data || {}
+
+      // Resolve bank config ID
+      let selectedBank: string = bankData.selected_bank || ''
+      let proposedBankDbId: string = c.proposed_bank_id || ''
+      if (!selectedBank && c.proposed_bank?.name) {
+        const match = SUPPORTED_BANKS.find(
+          (b: { id: string; name: string }) =>
+            b.name.toLowerCase() === c.proposed_bank.name.toLowerCase()
+        )
+        selectedBank = match?.id || ''
+      }
+      if (!proposedBankDbId && c.proposed_bank?.id) {
+        proposedBankDbId = c.proposed_bank.id
+      }
+
+      setFormData({
+        ...initialForm,
+        ...bankData,
+        loan_type: c.loan_type || bankData.loan_type || '',
+        selected_bank: selectedBank,
+        proposed_bank_db_id: proposedBankDbId,
+        co_borrowers: bankData.co_borrowers || [],
+        other_financing_facilities: bankData.other_financing_facilities || [],
+      } as CaseFormData)
+      setSavedCaseId(id)
+      setSavedCaseData(c)
+      // Update localStorage so Back-button navigation also has fresh data
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          formData: {
+            ...initialForm,
+            ...bankData,
+            loan_type: c.loan_type || bankData.loan_type || '',
+            selected_bank: selectedBank,
+            proposed_bank_db_id: proposedBankDbId,
+            co_borrowers: bankData.co_borrowers || [],
+            other_financing_facilities: bankData.other_financing_facilities || [],
+          },
+          savedCaseId: id,
+          currentStep: 1,
+          ts: Date.now(),
+        }))
+      } catch {}
+    } catch (e) {
+      console.error('Failed to load case:', e)
+      toast.error('Failed to load draft. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const fetchCalculationData = async (calcId: string) => {
     setIsFetchingCalculation(true)
     try {
       const supabase = createClient()
       const { data: calculation, error } = await supabase
         .from('calculations')
-        .select('*, proposed_bank:banks(id, name)')
+        .select('*, case_id, proposed_bank:banks(id, name)')
         .eq('id', calcId)
         .single()
 
@@ -556,6 +718,20 @@ function NewCasePageInner() {
       if (!calculation) return
 
       const calc = calculation as any
+
+      // If this calculation already has a linked draft case, resume it instead of starting fresh
+      if (calc.case_id) {
+        setIsFetchingCalculation(false)
+        await loadExistingCase(calc.case_id)
+        return
+      }
+
+      // Fresh calculation — purge any stale localStorage so old form data / deleted case IDs
+      // don't bleed into this new case form
+      try { localStorage.removeItem(LS_KEY) } catch {}
+      setSavedCaseId(null)
+      setSavedCaseData(null)
+      setRestoredFromCache(false)
 
       // Resolve bank config ID from DB bank name (e.g. "OCBC Bank" → "ocbc_bank")
       const calcBankName: string = calc.proposed_bank?.name || ''
@@ -601,6 +777,8 @@ function NewCasePageInner() {
         product_type: calc.product_type || 'term_loan',
         loan_purpose: calc.has_cash_out ? 'cash_out_refinance' : (calc.loan_purpose || 'purchase'),
         facility_amount: calc.proposed_loan_amount?.toString() || calc.loan_amount?.toString() || '',
+        facility_tenure_months: calc.proposed_tenure_months?.toString()
+          || (calc.tenure_years ? (parseInt(calc.tenure_years) * 12).toString() : ''),
         loan_tenure: calc.tenure_years || formatTenureFromMonths(calc.proposed_tenure_months) || '',
         interest_rate: calc.proposed_interest_rate?.toString() || calc.interest_rate?.toString() || '',
         property_address: calc.property_address || '',
@@ -721,6 +899,7 @@ function NewCasePageInner() {
       
       if (section) {
         section.fields.forEach(field => {
+          if (field.type === 'group_header') return
           if (field.required) {
             // Check if field has conditional logic and should be visible
             let shouldValidate = true
@@ -755,6 +934,43 @@ function NewCasePageInner() {
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setCurrentStep(prev => Math.min(prev + 1, totalSteps))
+      // Auto-create the draft on leaving step 1 (bank + loan type selected)
+      // so subsequent keystrokes on later steps are auto-saved via PATCH
+      if (currentStep === 1 && !savedCaseId) {
+        // Fire-and-forget silent save — no toast, no blocking UI
+        ;(async () => {
+          if (isSavingRef.current) return
+          isSavingRef.current = true
+          setAutoSaveStatus('saving')
+          try {
+            const supabase = createClient()
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+            const payload = buildCasePayload(user.id)
+            const res = await fetch('/api/cases', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payload, status: 'draft' }),
+            })
+            if (!res.ok) return
+            const { data } = await res.json()
+            const newId = data?.id
+            if (!newId) return
+            setSavedCaseId(newId)
+            setSavedCaseData(data)
+            router.replace(`/agent/cases/new?id=${newId}`)
+            if (calculationId) {
+              await supabase.from('calculations').update({ case_id: newId }).eq('id', calculationId)
+            }
+            setAutoSaveStatus('saved')
+            setTimeout(() => setAutoSaveStatus('idle'), 3000)
+          } catch {
+            setAutoSaveStatus('error')
+          } finally {
+            isSavingRef.current = false
+          }
+        })()
+      }
     }
   }
 
@@ -767,111 +983,23 @@ function NewCasePageInner() {
     agent_id: agentId,
     loan_type: formData.loan_type || 'refinance',
     proposed_bank_id: formData.proposed_bank_db_id || null,
+    proposed_loan_amount: formData.facility_amount ? parseFloat(formData.facility_amount) : null,
     status: 'draft',
     bank_form_data: {
-      client_title: formData.client_title,
-      client_name: formData.client_name,
-      id_type: formData.id_type,
-      client_ic: formData.client_ic,
-      client_old_ic: formData.client_old_ic,
-      client_passport: formData.client_passport,
-      client_other_id: formData.client_other_id,
-      passport_expiry_date: formData.passport_expiry_date,
-      client_dob: formData.client_dob,
-      gender: formData.gender,
-      race: formData.race,
-      bumiputra: formData.bumiputra,
-      marital_status: formData.marital_status,
+      // Spread ALL formData so dynamic section fields are never omitted
+      ...formData,
+      // Override fields that need numeric type conversion
       no_of_dependants: parseInt(formData.no_of_dependants) || 0,
-      home_address: formData.home_address,
-      post_code: formData.post_code,
-      city: formData.city,
-      state: formData.state,
-      country: formData.country,
-      years_at_address: formData.years_at_address,
-      correspondence_same_as_home: formData.correspondence_same_as_home,
-      correspondence_address: formData.correspondence_address,
-      client_email: formData.client_email,
-      client_phone: formData.client_phone,
-      employment_type: formData.employment_type,
-      employer_name: formData.employer_name,
-      nature_of_business: formData.nature_of_business,
-      occupation: formData.occupation,
-      employer_address: formData.employer_address,
-      office_tel: formData.office_tel,
       length_service_years: parseInt(formData.length_service_years) || 0,
       length_service_months: parseInt(formData.length_service_months) || 0,
       monthly_income: parseFloat(formData.monthly_income) || 0,
-      company_establishment_date: formData.company_establishment_date,
-      prev_employer_name: formData.prev_employer_name,
-      prev_nature_of_business: formData.prev_nature_of_business,
-      prev_occupation: formData.prev_occupation,
-      prev_length_service: formData.prev_length_service,
-      product_type: formData.product_type,
-      is_islamic: formData.is_islamic,
-      purpose_of_financing: formData.purpose_of_financing,
-      facility_type: formData.facility_type,
-      facility_amount: formData.facility_amount,
-      facility_tenure_months: formData.facility_tenure_months,
-      overdraft_amount: formData.overdraft_amount,
-      overdraft_tenure_months: formData.overdraft_tenure_months,
-      other_facility_details: formData.other_facility_details,
-      finance_legal_cost: formData.finance_legal_cost,
-      legal_cost_amount: formData.legal_cost_amount,
-      finance_valuation_cost: formData.finance_valuation_cost,
-      valuation_cost_amount: formData.valuation_cost_amount,
-      current_bank_name: formData.current_bank_name,
-      refinance_purpose: formData.refinance_purpose,
-      insurance_type: formData.insurance_type,
-      insurance_financed_by: formData.insurance_financed_by,
-      insurance_premium_amount: formData.insurance_premium_amount,
-      insurance_term_months: formData.insurance_term_months,
-      deferment_period_months: formData.deferment_period_months,
-      sum_insured_main: formData.sum_insured_main,
-      sum_insured_joint: formData.sum_insured_joint,
-      sum_insured_3rd: formData.sum_insured_3rd,
-      sum_insured_4th: formData.sum_insured_4th,
-      loan_amount: formData.loan_amount,
-      loan_tenure: formData.loan_tenure,
-      interest_rate: formData.interest_rate,
-      loan_purpose: formData.loan_purpose,
-      property_type: formData.property_type,
-      property_subtype: formData.property_subtype,
-      no_of_storey: formData.no_of_storey,
-      financing_type: formData.financing_type,
-      built_type: formData.built_type,
-      construction_stage: formData.construction_stage,
-      percent_completed: formData.percent_completed,
-      project_name: formData.project_name,
-      developer_seller_name: formData.developer_seller_name,
-      property_address: formData.property_address,
-      property_post_code: formData.property_post_code,
-      property_city: formData.property_city,
-      property_state: formData.property_state,
-      property_country: formData.property_country,
-      purchase_price: formData.purchase_price,
-      first_house: formData.first_house,
-      land_size_sqft: formData.land_size_sqft,
-      buildup_size_sqft: formData.buildup_size_sqft,
-      title_type: formData.title_type,
-      land_tenure: formData.land_tenure,
-      co_borrowers: formData.co_borrowers,
-      valuer_name: (formData as any).valuer_name,
-      valuer_firm: (formData as any).valuer_firm,
-      valuer_contact: (formData as any).valuer_contact,
-      valuation_date: (formData as any).valuation_date,
-      indicative_value: (formData as any).indicative_value,
-      valuation_fee_quoted: (formData as any).valuation_fee_quoted,
-      report_received: (formData as any).report_received,
-      selected_lawyer_type: formData.selected_lawyer_type,
       lawyer_id: formData.lawyer_id || null,
-      lawyer_professional_fee: formData.lawyer_professional_fee ? parseFloat(formData.lawyer_professional_fee) : null,
-      has_special_arrangement: formData.has_special_arrangement,
-      special_arrangement_discount: formData.special_arrangement_discount ? parseFloat(formData.special_arrangement_discount) : null,
-      lawyer_name_other: formData.lawyer_name_other,
-      lawyer_firm_other: formData.lawyer_firm_other,
-      lawyer_contact_other: formData.lawyer_contact_other,
-      lawyer_email_other: formData.lawyer_email_other,
+      lawyer_professional_fee: formData.lawyer_professional_fee
+        ? parseFloat(formData.lawyer_professional_fee)
+        : null,
+      special_arrangement_discount: formData.special_arrangement_discount
+        ? parseFloat(formData.special_arrangement_discount)
+        : null,
     }
   })
 
@@ -945,17 +1073,25 @@ function NewCasePageInner() {
         setSavedCaseData(updated)
         toast.success('Draft updated!')
       } else {
-        // First save — INSERT
-        const { data, error } = await supabase
-          .from('cases')
-          .insert([payload as any])
-          .select()
-          .single()
-        if (error) throw error
-        setSavedCaseId((data as any).id)
+        // First save — fetch agency_id then INSERT via API (avoids RLS issues)
+        const res = await fetch('/api/cases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, status: 'draft' }),
+        })
+        if (!res.ok) {
+          const j = await res.json()
+          throw new Error(j.error || 'Failed to save draft')
+        }
+        const { data } = await res.json()
+        const newId = data?.id
+        if (!newId) throw new Error('No case ID returned')
+        setSavedCaseId(newId)
         setSavedCaseData(data)
+        // Update URL so refreshing/Back keeps this draft
+        router.replace(`/agent/cases/new?id=${newId}`)
         if (calculationId) {
-          await supabase.from('calculations').update({ case_id: (data as any).id })
+          await supabase.from('calculations').update({ case_id: newId }).eq('id', calculationId)
         }
         toast.success('Draft saved! Fill in remaining details, then Render to PDF and Submit.')
       }
@@ -1001,19 +1137,24 @@ function NewCasePageInner() {
           throw new Error(j.error || 'Failed to submit case')
         }
       } else {
-        // Not saved yet — INSERT directly as submitted
-        const caseData = { ...buildCasePayload(user.id), client_id: clientId, status: 'submitted' }
-        const { data, error } = await supabase
-          .from('cases')
-          .insert([caseData as any])
-          .select()
-          .single()
-        if (error) throw error
-        if (calculationId) {
-          await supabase.from('calculations').update({ case_id: (data as any).id })
+        // Not saved yet — INSERT via API (ensures agency_id is set, avoids RLS)
+        const payload = { ...buildCasePayload(user.id), client_id: clientId, status: 'submitted' }
+        const res = await fetch('/api/cases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          const j = await res.json()
+          throw new Error(j.error || 'Failed to submit case')
+        }
+        const { data } = await res.json()
+        if (calculationId && data?.id) {
+          await supabase.from('calculations').update({ case_id: data.id }).eq('id', calculationId)
         }
       }
 
+      localStorage.removeItem(LS_KEY)
       toast.success('Case submitted successfully!')
       router.push('/agent/cases')
     } catch (error: any) {
@@ -1127,7 +1268,7 @@ function NewCasePageInner() {
                 type="number"
                 step="0.01"
                 min="0"
-                value={formData.lawyer_professional_fee}
+                value={formData.lawyer_professional_fee ?? ''}
                 onChange={(e) => f('lawyer_professional_fee')(e.target.value)}
                 placeholder="e.g. 6250.00"
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
@@ -1266,10 +1407,19 @@ function NewCasePageInner() {
   }
 
   const renderCurrentStep = () => {
-    if (showPrintView && savedCaseData) {
+    if (showPrintView) {
+      // Build print data from in-memory formData (always up-to-date) plus case metadata
+      const printData = {
+        id: savedCaseId,
+        case_code: (savedCaseData as any)?.case_code,
+        status: (savedCaseData as any)?.status || 'draft',
+        // Spread all form fields directly so CasePrintView can access them at the top level
+        ...formData,
+      }
       return (
         <CasePrintView
-          caseData={savedCaseData}
+          caseData={printData}
+          bankId={bankConfig?.bankId}
           onClose={() => {
             setShowPrintView(false)
             router.push('/agent/cases')
@@ -1697,12 +1847,48 @@ function NewCasePageInner() {
             </div>
             
             {!showPrintView && (
-              <div className="text-sm text-gray-600">
-                Step {currentStep} of {totalSteps}
+              <div className="flex items-center gap-3">
+                <div className="text-sm text-gray-600">Step {currentStep} of {totalSteps}</div>
+                {autoSaveStatus === 'saving' && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />Saving…
+                  </span>
+                )}
+                {autoSaveStatus === 'saved' && (
+                  <span className="flex items-center gap-1 text-xs text-green-500">
+                    <CheckCircle className="w-3 h-3" />Saved
+                  </span>
+                )}
+                {autoSaveStatus === 'error' && (
+                  <span className="text-xs text-red-400">Auto-save failed</span>
+                )}
               </div>
             )}
           </div>
         </div>
+
+        {restoredFromCache && !showPrintView && (
+          <div className="mb-4 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+            <p className="text-sm text-amber-800">
+              ↩ Draft restored from your last session
+              {savedCaseId && <span className="font-medium"> — already saved</span>}
+            </p>
+            <button
+              onClick={() => {
+                localStorage.removeItem(LS_KEY)
+                setFormData(initialForm)
+                setSavedCaseId(null)
+                setSavedCaseData(null)
+                setCurrentStep(1)
+                setRestoredFromCache(false)
+                router.replace('/agent/cases/new')
+              }}
+              className="text-xs text-amber-700 underline hover:text-amber-900 ml-4 shrink-0"
+            >
+              Start fresh
+            </button>
+          </div>
+        )}
 
         {!showPrintView && (
           <div className="mb-8">

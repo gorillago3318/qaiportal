@@ -215,13 +215,32 @@ export function CoBorrowerManager({ coBorrowers, onChange }: CoBorrowerManagerPr
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth * (DD/MM/YYYY)</label>
                       <input
-                        type="date"
-                        value={coBorrower.date_of_birth}
-                        onChange={(e) => updateCoBorrower(index, 'date_of_birth', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="DD/MM/YYYY"
+                        value={coBorrower.date_of_birth ? (() => { const [y,m,d] = coBorrower.date_of_birth.split('-'); return `${d}/${m}/${y}` })() : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^\d/]/g, "")
+                          if (raw.length === 10 && raw.includes('/')) {
+                            const parts = raw.split('/')
+                            if (parts.length === 3) {
+                              const [dd, mm, yyyy] = parts
+                              const iso = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                              if (!isNaN(new Date(iso + "T00:00:00").getTime())) {
+                                updateCoBorrower(index, 'date_of_birth', iso)
+                              }
+                            }
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent placeholder:text-gray-400"
                       />
+                      {coBorrower.date_of_birth && (
+                        <p className="text-xs text-green-600 mt-0.5">
+                          ✓ {(() => { const [y,m,d] = coBorrower.date_of_birth.split('-'); return `${d}/${m}/${y}` })()}
+                        </p>
+                      )}
                     </div>
 
                     <div>

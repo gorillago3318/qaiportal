@@ -146,21 +146,30 @@ export async function PATCH(
     const body = await request.json()
     const { status: newStatus, notes, admin_remarks, new_documents, ...otherFields } = body
 
-    // Build update payload
+    // Use admin client for all DB writes — bypasses RLS, avoids policy rejections
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adminDb = getAdminClient() as any
+
+    // Build update payload — only safe/known columns allowed at top level
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updatePayload: Record<string, any> = {}
 
     if (isAdmin) {
       if (newStatus !== undefined) updatePayload.status = newStatus
       if (admin_remarks !== undefined) updatePayload.admin_remarks = admin_remarks
+      // Admins may send arbitrary updates — merge them in
       Object.assign(updatePayload, otherFields)
     } else {
       // AGENT LOGIC
       const current = currentCase.status
-      
+
       if (current === 'draft' || current === 'kiv') {
-        // Agent can alter data
-        Object.assign(updatePayload, otherFields)
+        // Agent can alter data — but only safe top-level columns + bank_form_data
+        const { agent_id, loan_type, proposed_bank_id, bank_form_data } = otherFields as any
+        if (agent_id !== undefined) updatePayload.agent_id = agent_id
+        if (loan_type !== undefined) updatePayload.loan_type = loan_type
+        if (proposed_bank_id !== undefined) updatePayload.proposed_bank_id = proposed_bank_id
+        if (bank_form_data !== undefined) updatePayload.bank_form_data = bank_form_data
         // Allowed transitions
         if (newStatus === 'submitted' || newStatus === 'draft') {
           updatePayload.status = newStatus
@@ -182,7 +191,7 @@ export async function PATCH(
       }
     }
 
-    const { data: updatedCase, error: updateError } = await supabase
+    const { data: updatedCase, error: updateError } = await adminDb
       .from('cases')
       .update(updatePayload)
       .eq('id', id)
@@ -190,6 +199,7 @@ export async function PATCH(
       .single()
 
     if (updateError) {
+      console.error('PATCH update error:', updateError)
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
@@ -204,13 +214,13 @@ export async function PATCH(
         uploaded_by: user.id
       }))
       if (docsToInsert.length > 0) {
-        await supabase.from('case_documents').insert(docsToInsert)
+        await adminDb.from('case_documents').insert(docsToInsert)
       }
     }
 
     // Insert status history if status changed
     if (newStatus && newStatus !== currentCase.status) {
-      await supabase.from('case_status_history').insert({
+      await adminDb.from('case_status_history').insert({
         case_id: id,
         from_status: currentCase.status,
         to_status: newStatus,
@@ -220,7 +230,7 @@ export async function PATCH(
 
       // Notify Agent if Admin changed status
       if (isAdmin && currentCase.agent_id) {
-        await supabase.from('notifications').insert({
+        await adminDb.from('notifications').insert({
           user_id: currentCase.agent_id,
           title: 'Case Status Updated',
           message: `Your case has been updated to ${newStatus}.`,
@@ -348,6 +358,79 @@ export async function PATCH(
     return NextResponse.json({ data: updatedCase })
   } catch (err) {
     console.error('PATCH /api/cases/[id] error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// ─── DELETE /api/cases/[id] ───────────────────────────────────────────────────
+// Agents:  can only delete their own DRAFT cases
+// Admins:  can delete any case regardless of status
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const cookieStore = await cookies()
+    const supabase = getSupabase(cookieStore)
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const profile = await getCallerProfile(user.id)
+    const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
+
+    // Fetch the case to verify ownership and status
+    const { data: caseRow, error: fetchErr } = await supabase
+      .from('cases')
+      .select('id, agent_id, status, case_code')
+      .eq('id', id)
+      .single()
+
+    if (fetchErr || !caseRow) {
+      return NextResponse.json({ error: 'Case not found' }, { status: 404 })
+    }
+
+    // Permission check
+    if (!isAdmin) {
+      if (caseRow.agent_id !== user.id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      if (caseRow.status !== 'draft') {
+        return NextResponse.json(
+          { error: 'Only draft cases can be deleted. Contact admin to remove submitted cases.' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // Use admin client so RLS does not block cascade deletes
+    const adminClient = getAdminClient() as any
+
+    // Delete related records first (in case FK constraints don't cascade)
+    await adminClient.from('case_status_history').delete().eq('case_id', id)
+    await adminClient.from('case_comments').delete().eq('case_id', id)
+    await adminClient.from('co_borrowers').delete().eq('case_id', id)
+    await adminClient.from('commissions').delete().eq('case_id', id)
+    await adminClient.from('notifications').delete().eq('case_id', id)
+    // Unlink any calculation that referenced this case
+    await adminClient.from('calculations').update({ case_id: null }).eq('case_id', id)
+
+    // Delete the case itself
+    const { error: deleteErr } = await adminClient
+      .from('cases')
+      .delete()
+      .eq('id', id)
+
+    if (deleteErr) {
+      return NextResponse.json({ error: deleteErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, case_code: caseRow.case_code })
+  } catch (err) {
+    console.error('DELETE /api/cases/[id] error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

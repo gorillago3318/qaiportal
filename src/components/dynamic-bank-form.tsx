@@ -20,39 +20,52 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
   // Check conditional rendering
   if (field.conditional) {
     let conditionMet = false
-    
+
     if (field.conditional.custom_logic) {
-      // Use custom logic function
       conditionMet = field.conditional.custom_logic(value)
     } else if (field.conditional.not_equals !== undefined) {
-      // Check not equals
       conditionMet = value[field.conditional.field] !== field.conditional.not_equals
     } else if (field.conditional.equals !== undefined) {
-      // Check equals (original behavior)
       conditionMet = value[field.conditional.field] === field.conditional.equals
     }
-    
+
     if (!conditionMet) return null
   }
 
   const gridClass = field.gridColumn === 2 ? 'col-span-2' : 'col-span-1'
 
+  const inputBase = cn(
+    'w-full px-3 py-2.5 text-sm rounded-lg border transition-colors',
+    'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+    'placeholder:text-gray-400',
+    error
+      ? 'border-red-400 bg-red-50'
+      : 'border-gray-300 bg-white hover:border-gray-400'
+  )
+
   const renderInput = () => {
     switch (field.type) {
+      case 'date':
+        return (
+          <input
+            type="text"
+            value={value[field.id] || ''}
+            onChange={(e) => onChange(field.id, e.target.value)}
+            placeholder="DD/MM/YYYY"
+            className={inputBase}
+          />
+        )
+
       case 'text':
       case 'tel':
       case 'email':
-      case 'date':
         return (
           <input
             type={field.type}
             value={value[field.id] || ''}
             onChange={(e) => onChange(field.id, e.target.value)}
             placeholder={field.placeholder}
-            className={cn(
-              "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-              error && "border-red-500"
-            )}
+            className={inputBase}
           />
         )
 
@@ -65,28 +78,24 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
             placeholder={field.placeholder}
             min={field.validation?.min}
             max={field.validation?.max}
-            className={cn(
-              "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-              error && "border-red-500"
-            )}
+            className={inputBase}
           />
         )
 
       case 'currency':
         return (
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">RM</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-500 pointer-events-none">
+              RM
+            </span>
             <input
               type="number"
               value={value[field.id] || ''}
               onChange={(e) => onChange(field.id, e.target.value)}
-              placeholder={field.placeholder || '0'}
+              placeholder={field.placeholder || '0.00'}
               min="0"
               step="0.01"
-              className={cn(
-                "w-full pl-12 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-                error && "border-red-500"
-              )}
+              className={cn(inputBase, 'pl-10')}
             />
           </div>
         )
@@ -102,12 +111,11 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
               min="0"
               max="100"
               step="0.01"
-              className={cn(
-                "w-full pr-8 pl-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-                error && "border-red-500"
-              )}
+              className={cn(inputBase, 'pr-8')}
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+              %
+            </span>
           </div>
         )
 
@@ -118,24 +126,18 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
             onChange={(e) => onChange(field.id, e.target.value)}
             placeholder={field.placeholder}
             rows={3}
-            className={cn(
-              "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-              error && "border-red-500"
-            )}
+            className={cn(inputBase, 'resize-none')}
           />
         )
 
-      case 'select':
-        // Ensure value is a scalar (string), not an object
-        const selectValue = typeof value[field.id] === 'string' ? value[field.id] : ''
+      case 'select': {
+        const selectValue =
+          typeof value[field.id] === 'string' ? value[field.id] : ''
         return (
           <select
             value={selectValue}
             onChange={(e) => onChange(field.id, e.target.value)}
-            className={cn(
-              "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-              error && "border-red-500"
-            )}
+            className={cn(inputBase, 'cursor-pointer')}
           >
             <option value="">Select {field.label}</option>
             {field.options?.map((option) => (
@@ -145,36 +147,89 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
             ))}
           </select>
         )
+      }
 
       case 'radio':
         return (
-          <div className="flex gap-4">
-            {field.options?.map((option) => (
-              <label key={option.value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name={field.id}
-                  value={option.value}
-                  checked={value[field.id] === option.value}
-                  onChange={(e) => onChange(field.id, e.target.value)}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap gap-2 pt-0.5">
+              {field.options?.map((option) => {
+                const isSelected = value[field.id] === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => onChange(field.id, option.value)}
+                    className={cn(
+                      'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
+                      'focus:outline-none focus:ring-2 focus:ring-blue-500',
+                      isSelected
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            {/* Inline amount input when Yes is selected */}
+            {field.sub_field && value[field.id] === 'yes' && (
+              <div className="flex items-center gap-3 pl-1">
+                <span className="text-sm text-gray-600 shrink-0">{field.sub_field.label}:</span>
+                <div className="relative w-48">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-500 pointer-events-none">
+                    RM
+                  </span>
+                  <input
+                    type="number"
+                    value={value[field.sub_field.id] || ''}
+                    onChange={(e) => onChange(field.sub_field!.id, e.target.value)}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )
 
       case 'checkbox':
         return (
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={value[field.id] || false}
-              onChange={(e) => onChange(field.id, e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded"
-            />
-            <span>{field.label}</span>
+          <label className="flex items-center gap-3 cursor-pointer group select-none">
+            <div
+              className={cn(
+                'w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all',
+                value[field.id]
+                  ? 'bg-blue-600 border-blue-600'
+                  : 'bg-white border-gray-300 group-hover:border-blue-400'
+              )}
+            >
+              {value[field.id] && (
+                <svg
+                  className="w-3 h-3 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              )}
+              <input
+                type="checkbox"
+                checked={value[field.id] || false}
+                onChange={(e) => onChange(field.id, e.target.checked)}
+                className="sr-only"
+              />
+            </div>
+            <span className="text-sm text-gray-700">{field.label}</span>
           </label>
         )
 
@@ -185,23 +240,45 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
             value={value[field.id] || ''}
             onChange={(e) => onChange(field.id, e.target.value)}
             placeholder={field.placeholder}
-            className={cn(
-              "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500",
-              error && "border-red-500"
-            )}
+            className={inputBase}
           />
         )
     }
   }
 
+  // Group header — full-width visual divider with title
+  if (field.type === 'group_header') {
+    return (
+      <div className="col-span-2 pt-2 pb-1">
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-2 py-1 bg-gray-100 rounded-full">
+            {field.label}
+          </span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+      </div>
+    )
+  }
+
+  // Checkbox renders its own label — skip the outer label wrapper
+  if (field.type === 'checkbox') {
+    return (
+      <div className={cn(gridClass, 'flex flex-col justify-center')}>
+        {renderInput()}
+        {error && <p className="text-red-500 text-xs mt-1.5">{error}</p>}
+      </div>
+    )
+  }
+
   return (
     <div className={gridClass}>
-      <label className="block text-sm font-medium mb-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
         {field.label}
         {field.required && <span className="text-red-500 ml-1">*</span>}
       </label>
       {renderInput()}
-      {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+      {error && <p className="text-red-500 text-xs mt-1.5">{error}</p>}
     </div>
   )
 }
@@ -221,14 +298,14 @@ const DynamicFormSection: React.FC<DynamicFormSectionProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">{section.title}</h2>
+      <div className="pb-3 border-b border-gray-200">
+        <h2 className="text-xl font-semibold text-gray-900">{section.title}</h2>
         {section.description && (
-          <p className="text-gray-600 mt-1">{section.description}</p>
+          <p className="text-sm text-gray-500 mt-1">{section.description}</p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
         {section.fields.map((field) => (
           <DynamicFormField
             key={field.id}

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
-import { formatCurrency, formatDate, calcMaxTenureMonths, monthsToYearsMonths, cn } from "@/lib/utils"
+import { formatCurrency, formatDate, formatDateOnly, calcMaxTenureMonths, monthsToYearsMonths, cn } from "@/lib/utils"
 import type { Bank } from "@/types/database"
 
 // ─── Types ────────────────────────────────────────────────────
@@ -385,12 +385,33 @@ export default function CalculationDetailPage() {
               placeholder="901231011234 (without dashes)"
               note="Auto-fills date of birth and age" />
             <div>
-              <label className="block text-xs font-medium text-[#0A1628] mb-1">Date of Birth</label>
-              <input type="date" value={edit.client_dob}
-                onChange={e => setEdit(prev => prev ? { ...prev, client_dob: e.target.value, client_age: ageFromDob(e.target.value) } : prev)}
-                className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
-              {editMaxTenure !== undefined && (
-                <p className="text-xs text-gray-500 mt-0.5">Max tenure: {monthsToYearsMonths(editMaxTenure)}</p>
+              <label className="block text-xs font-medium text-[#0A1628] mb-1">Date of Birth (DD/MM/YYYY)</label>
+              {/* Text input — always shows DD/MM/YYYY regardless of browser locale */}
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="DD/MM/YYYY"
+                value={edit.client_dob ? (() => { const [y,m,d] = edit.client_dob.split('-'); return `${d}/${m}/${y}` })() : ""}
+                onChange={e => {
+                  const raw = e.target.value.replace(/[^\d/]/g, "")
+                  if (raw.length === 10 && raw.includes('/')) {
+                    const parts = raw.split('/')
+                    if (parts.length === 3) {
+                      const [dd, mm, yyyy] = parts
+                      const iso = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                      if (!isNaN(new Date(iso + "T00:00:00").getTime())) {
+                        setEdit(prev => prev ? { ...prev, client_dob: iso, client_age: ageFromDob(iso) } : prev)
+                      }
+                    }
+                  }
+                }}
+                className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C] placeholder:text-gray-400"
+              />
+              {edit.client_dob && (
+                <p className="text-xs text-green-600 mt-0.5">
+                  ✓ {(() => { const [y,m,d] = edit.client_dob.split('-'); return `${d}/${m}/${y}` })()}
+                  {editMaxTenure !== undefined && ` · Max tenure: ${monthsToYearsMonths(editMaxTenure)}`}
+                </p>
               )}
             </div>
             <EditInput label="Age (years)" value={edit.client_age} onChange={handleAgeChange}
@@ -550,7 +571,7 @@ export default function CalculationDetailPage() {
             {calc.client_dob ? (
               <div>
                 <p className="text-sm font-medium text-[#0A1628]">
-                  {new Date(calc.client_dob + "T00:00:00").toLocaleDateString("en-GB")}
+                  {formatDateOnly(calc.client_dob)}
                 </p>
                 {maxTenureMonths !== undefined && (
                   <p className="text-xs text-gray-500">Max tenure: {monthsToYearsMonths(maxTenureMonths)}</p>

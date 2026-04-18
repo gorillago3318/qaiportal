@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, ArrowRight, CheckCircle, FileText, Plus, Save, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, CheckCircle, FileText, Loader2, Plus, Save, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ import {
 import {
   formatCurrency,
   formatDate,
+  formatDateOnly,
   calcMaxTenureMonths,
   monthsToYearsMonths,
   cn,
@@ -187,6 +188,8 @@ function NewCalculationWizard() {
   const [results, setResults] = React.useState<RefinanceResults | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [savedId, setSavedId] = React.useState<string | null>(null)
+  const [autoSaveStatus, setAutoSaveStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const isSavingCalcRef = React.useRef(false)
 
   const allDobs = [state.clientDob, ...state.coBorrowers.map(c => c.dob)].filter(Boolean)
   const maxTenureMonths = allDobs.length > 0
@@ -250,6 +253,70 @@ function NewCalculationWizard() {
   function update<K extends keyof WizardState>(key: K, value: WizardState[K]) {
     setState((s) => ({ ...s, [key]: value }))
   }
+
+  // Auto-save to DB: 2 s after any state change (client name + loan type required)
+  React.useEffect(() => {
+    if (!state.clientName.trim() || !state.loanType) return
+    const timer = setTimeout(async () => {
+      if (isSavingCalcRef.current) return
+      isSavingCalcRef.current = true
+      setAutoSaveStatus('saving')
+      try {
+        const currentTenureMonths = (state.currentTenureYears ?? 0) * 12 + (state.currentTenureMonths ?? 0)
+        const proposedTenureMonths = (state.proposedTenureYears ?? 0) * 12 + (state.proposedTenureMonths ?? 0)
+        const body = {
+          client_name: state.clientName,
+          client_ic: state.clientIc || null,
+          client_phone: state.clientPhone || null,
+          client_dob: state.clientDob || (state.clientAge ? `${new Date().getFullYear() - parseInt(state.clientAge)}-01-01` : null),
+          loan_type: state.loanType,
+          current_bank: state.currentBank || null,
+          current_loan_amount: state.currentLoanAmount ?? null,
+          current_interest_rate: state.currentInterestRate ?? null,
+          current_monthly_instalment: state.currentMonthlyInstalment ?? null,
+          current_tenure_months: currentTenureMonths || null,
+          proposed_bank_id: state.proposedBankId || null,
+          proposed_loan_amount: state.proposedLoanAmount ?? null,
+          proposed_interest_rate: state.proposedInterestRate ?? null,
+          proposed_tenure_months: proposedTenureMonths || null,
+          has_cash_out: state.hasCashOut,
+          cash_out_amount: state.hasCashOut ? state.cashOutAmount ?? null : null,
+          cash_out_tenure_months: state.cashOutTenureMonths ?? null,
+          finance_legal_fees: state.financeInFees,
+          legal_fee_amount: state.financeInFees ? state.legalFeeAmount ?? null : null,
+          valuation_fee_amount: state.financeInFees ? state.valuationFeeAmount ?? null : null,
+          stamp_duty_amount: state.financeInFees ? state.stampDutyAmount ?? null : null,
+          results: results ?? null,
+          referral_code: state.referralCode || null,
+        }
+        if (savedId) {
+          const res = await fetch(`/api/calculations/${savedId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) throw new Error()
+        } else {
+          const res = await fetch('/api/calculations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) throw new Error()
+          const data = await res.json()
+          setSavedId(data.id)
+        }
+        setAutoSaveStatus('saved')
+        setTimeout(() => setAutoSaveStatus('idle'), 3000)
+      } catch {
+        setAutoSaveStatus('error')
+      } finally {
+        isSavingCalcRef.current = false
+      }
+    }, 2000)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, savedId, results])
 
   // ── Validation per step ──
   function canProceed(): boolean {
@@ -367,44 +434,58 @@ function NewCalculationWizard() {
       const proposedTenureMonths =
         (state.proposedTenureYears ?? 0) * 12 + (state.proposedTenureMonths ?? 0)
 
-      const response = await fetch("/api/calculations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_name: state.clientName,
-          client_ic: state.clientIc || null,
-          client_phone: state.clientPhone || null,
-          client_dob: state.clientDob || (state.clientAge ? `${new Date().getFullYear() - parseInt(state.clientAge)}-01-01` : null),
-          loan_type: state.loanType,
-          current_bank: state.currentBank || null,
-          current_loan_amount: state.currentLoanAmount ?? null,
-          current_interest_rate: state.currentInterestRate ?? null,
-          current_monthly_instalment: state.currentMonthlyInstalment ?? null,
-          current_tenure_months: currentTenureMonths || null,
-          proposed_bank_id: state.proposedBankId || null,
-          proposed_loan_amount: state.proposedLoanAmount ?? null,
-          proposed_interest_rate: state.proposedInterestRate ?? null,
-          proposed_tenure_months: proposedTenureMonths || null,
-          has_cash_out: state.hasCashOut,
-          cash_out_amount: state.hasCashOut ? state.cashOutAmount ?? null : null,
-          cash_out_tenure_months: state.cashOutTenureMonths ?? null,
-          finance_legal_fees: state.financeInFees,
-          legal_fee_amount: state.financeInFees ? state.legalFeeAmount ?? null : null,
-          valuation_fee_amount: state.financeInFees ? state.valuationFeeAmount ?? null : null,
-          stamp_duty_amount: state.financeInFees ? state.stampDutyAmount ?? null : null,
-          results: results,
-          referral_code: state.referralCode || null,
-        }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || "Failed to save")
+      const body = {
+        client_name: state.clientName,
+        client_ic: state.clientIc || null,
+        client_phone: state.clientPhone || null,
+        client_dob: state.clientDob || (state.clientAge ? `${new Date().getFullYear() - parseInt(state.clientAge)}-01-01` : null),
+        loan_type: state.loanType,
+        current_bank: state.currentBank || null,
+        current_loan_amount: state.currentLoanAmount ?? null,
+        current_interest_rate: state.currentInterestRate ?? null,
+        current_monthly_instalment: state.currentMonthlyInstalment ?? null,
+        current_tenure_months: currentTenureMonths || null,
+        proposed_bank_id: state.proposedBankId || null,
+        proposed_loan_amount: state.proposedLoanAmount ?? null,
+        proposed_interest_rate: state.proposedInterestRate ?? null,
+        proposed_tenure_months: proposedTenureMonths || null,
+        has_cash_out: state.hasCashOut,
+        cash_out_amount: state.hasCashOut ? state.cashOutAmount ?? null : null,
+        cash_out_tenure_months: state.cashOutTenureMonths ?? null,
+        finance_legal_fees: state.financeInFees,
+        legal_fee_amount: state.financeInFees ? state.legalFeeAmount ?? null : null,
+        valuation_fee_amount: state.financeInFees ? state.valuationFeeAmount ?? null : null,
+        stamp_duty_amount: state.financeInFees ? state.stampDutyAmount ?? null : null,
+        results: results,
+        referral_code: state.referralCode || null,
       }
 
-      const data = await response.json()
-      setSavedId(data.id)
-      toast.success("Calculation saved successfully!")
+      // If auto-save already created the record, just PATCH with the final results
+      if (savedId) {
+        const response = await fetch(`/api/calculations/${savedId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        if (!response.ok) {
+          const err = await response.json()
+          throw new Error(err.error || "Failed to save")
+        }
+        toast.success("Calculation saved!")
+      } else {
+        const response = await fetch("/api/calculations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        if (!response.ok) {
+          const err = await response.json()
+          throw new Error(err.error || "Failed to save")
+        }
+        const data = await response.json()
+        setSavedId(data.id)
+        toast.success("Calculation saved successfully!")
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save calculation"
       toast.error(message)
@@ -614,19 +695,35 @@ function NewCalculationWizard() {
                               Date of Birth
                               <span className="text-xs text-gray-400 ml-1">(for max tenure)</span>
                             </label>
+                            {/* Text input always shows DD/MM/YYYY — avoids browser locale MM/DD/YYYY confusion */}
                             <input
-                              type="date"
-                              value={state.clientDob}
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="DD/MM/YYYY"
+                              value={state.clientDob ? (() => { const [y,m,d] = state.clientDob.split('-'); return `${d}/${m}/${y}` })() : ""}
                               onChange={(e) => {
-                                const dob = e.target.value
-                                const age = dob ? String(new Date().getFullYear() - new Date(dob + "T00:00:00").getFullYear()) : ""
-                                setState(s => ({ ...s, clientDob: dob, clientAge: age }))
+                                const raw = e.target.value.replace(/[^\d/]/g, "")
+                                // Accept free typing; parse when full DD/MM/YYYY is entered
+                                if (raw.length === 10 && raw.includes('/')) {
+                                  const parts = raw.split('/')
+                                  if (parts.length === 3) {
+                                    const [dd, mm, yyyy] = parts
+                                    const iso = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                                    const parsed = new Date(iso + "T00:00:00")
+                                    if (!isNaN(parsed.getTime())) {
+                                      const age = String(new Date().getFullYear() - parsed.getFullYear())
+                                      setState(s => ({ ...s, clientDob: iso, clientAge: age }))
+                                      return
+                                    }
+                                  }
+                                }
+                                // Partial entry — keep as-is (don't wipe clientDob)
                               }}
-                              className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent"
+                              className="w-full h-10 px-3 text-sm rounded-lg border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent placeholder:text-gray-400"
                             />
                             {state.clientDob ? (
-                              <p className="text-xs text-gray-500 mt-1">
-                                {new Date(state.clientDob + "T00:00:00").toLocaleDateString("en-GB")}
+                              <p className="text-xs text-green-600 mt-1 font-medium">
+                                ✓ DOB: {(() => { const [y,m,d] = state.clientDob.split('-'); return `${d}/${m}/${y}` })()}
                                 {maxTenureMonths !== undefined && ` · Max tenure: ${monthsToYearsMonths(maxTenureMonths)}`}
                               </p>
                             ) : (
@@ -749,13 +846,26 @@ function NewCalculationWizard() {
                                   <div>
                                     <label className="block text-xs font-medium text-[#0A1628] mb-1.5">Date of Birth</label>
                                     <input
-                                      type="date"
-                                      value={cb.dob}
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="DD/MM/YYYY"
+                                      value={cb.dob ? (() => { const [y,m,d] = cb.dob.split('-'); return `${d}/${m}/${y}` })() : ""}
                                       onChange={(e) => {
-                                        const newCb = [...state.coBorrowers]; newCb[idx].dob = e.target.value; update("coBorrowers", newCb)
+                                        const raw = e.target.value.replace(/[^\d/]/g, "")
+                                        if (raw.length === 10 && raw.includes('/')) {
+                                          const parts = raw.split('/')
+                                          if (parts.length === 3) {
+                                            const [dd, mm, yyyy] = parts
+                                            const iso = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                                            if (!isNaN(new Date(iso + "T00:00:00").getTime())) {
+                                              const newCb = [...state.coBorrowers]; newCb[idx].dob = iso; update("coBorrowers", newCb)
+                                            }
+                                          }
+                                        }
                                       }}
-                                      className="w-full h-9 px-3 text-xs rounded-md border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                                      className="w-full h-9 px-3 text-xs rounded-md border border-[#E5E7EB] bg-white text-[#0A1628] focus:outline-none focus:ring-1 focus:ring-[#C9A84C] placeholder:text-gray-400"
                                     />
+                                    {cb.dob && <p className="text-xs text-green-600 mt-0.5">✓ {(() => { const [y,m,d] = cb.dob.split('-'); return `${d}/${m}/${y}` })()}</p>}
                                   </div>
                                   <div>
                                     <label className="block text-xs font-medium text-[#0A1628] mb-1.5">Phone</label>
@@ -1511,10 +1621,25 @@ function NewCalculationWizard() {
       {/* Navigation buttons */}
       {step < 4 && (
         <div className="flex items-center justify-between pt-2">
-          <Button variant="outline" onClick={handleBack} disabled={step === 0}>
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handleBack} disabled={step === 0}>
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            {autoSaveStatus === 'saving' && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <Loader2 className="w-3 h-3 animate-spin" />Saving…
+              </span>
+            )}
+            {autoSaveStatus === 'saved' && (
+              <span className="flex items-center gap-1 text-xs text-green-500">
+                <CheckCircle className="w-3 h-3" />Saved
+              </span>
+            )}
+            {autoSaveStatus === 'error' && (
+              <span className="text-xs text-red-400">Auto-save failed</span>
+            )}
+          </div>
 
           {step === 3 ? (
             <Button variant="gold" onClick={handleCalculate} size="lg">
@@ -1886,7 +2011,7 @@ function ResultsPanel({
         {savedId && (
           <Button
             variant="default"
-            onClick={() => router.push(`/agent/cases/new?calc=${savedId}`)}
+            onClick={() => router.push(`/agent/cases/new?from_calculation=${savedId}`)}
           >
             <ArrowRight className="h-4 w-4" />
             Convert to Case

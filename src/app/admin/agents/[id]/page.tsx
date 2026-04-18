@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import { USER_ROLE_LABELS, CASE_STATUS_LABELS, LOAN_TYPE_LABELS, type UserRole, type CaseStatus } from "@/types/database"
 
 type AgentProfile = {
@@ -18,6 +18,7 @@ type AgentProfile = {
   phone: string | null
   role: UserRole
   agent_code: string | null
+  upline_id: string | null
   is_active: boolean
   bank_name: string | null
   bank_account_number: string | null
@@ -70,7 +71,7 @@ export default function AdminAgentDetailPage() {
       const [agentRes, casesRes, allAgentsRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("*, upline:profiles!profiles_upline_id_fkey(full_name, role, agent_code)")
+          .select("*, upline_id, upline:profiles!profiles_upline_id_fkey(full_name, role, agent_code)")
           .eq("id", id)
           .single(),
         supabase
@@ -82,8 +83,10 @@ export default function AdminAgentDetailPage() {
         supabase
           .from("profiles")
           .select("id, full_name, agent_code, role")
-          .in("role", ["agency_manager", "unit_manager", "senior_agent"])
-          .neq("id", id),
+          .not("role", "in", "(super_admin,admin)")
+          .eq("is_active", true)
+          .neq("id", id)
+          .order("role", { ascending: true }),
       ])
 
       if (agentRes.error || !agentRes.data) {
@@ -94,7 +97,7 @@ export default function AdminAgentDetailPage() {
 
       const agentData = agentRes.data as AgentProfile
       setAgent(agentData)
-      setForm({ role: agentData.role, is_active: agentData.is_active, upline_id: agentData.upline?.agent_code ? "" : "" })
+      setForm({ role: agentData.role, is_active: agentData.is_active, upline_id: agentData.upline_id || "" })
       setCases((casesRes.data || []) as CaseSummary[])
       setAllAgents((allAgentsRes.data || []) as { id: string; full_name: string; agent_code: string | null; role: UserRole }[])
       setLoading(false)
@@ -108,14 +111,24 @@ export default function AdminAgentDetailPage() {
     const supabase = createClient() as any
     const { error } = await supabase
       .from("profiles")
-      .update({ role: form.role, is_active: form.is_active })
+      .update({
+        role: form.role,
+        is_active: form.is_active,
+        upline_id: form.upline_id || null,
+      })
       .eq("id", id)
 
     if (error) {
       toast.error("Failed to save: " + error.message)
     } else {
       toast.success("Profile updated")
-      setAgent((prev) => prev ? { ...prev, role: form.role, is_active: form.is_active } : prev)
+      // Refresh to get updated upline display name
+      const { data: refreshed } = await supabase
+        .from("profiles")
+        .select("*, upline_id, upline:profiles!profiles_upline_id_fkey(full_name, role, agent_code)")
+        .eq("id", id)
+        .single()
+      if (refreshed) setAgent(refreshed as AgentProfile)
       setEditMode(false)
     }
     setSaving(false)
@@ -156,7 +169,7 @@ export default function AdminAgentDetailPage() {
         {[
           { label: "Total Cases", value: totalCases },
           { label: "Active Cases", value: activeCases },
-          { label: "Joined", value: new Date(agent.created_at).toLocaleDateString("en-MY", { month: "short", year: "numeric" }) },
+          { label: "Joined", value: formatDate(agent.created_at) },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="pt-5 pb-4">
@@ -203,6 +216,22 @@ export default function AdminAgentDetailPage() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Upline</label>
+                <select
+                  value={form.upline_id}
+                  onChange={(e) => setForm({ ...form, upline_id: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                >
+                  <option value="">— No upline (top level) —</option>
+                  {allAgents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.full_name}{a.agent_code ? ` (${a.agent_code})` : ''} — {USER_ROLE_LABELS[a.role]}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Sets who this agent reports to in the commission chain</p>
               </div>
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setEditMode(false)} className="flex-1">Cancel</Button>

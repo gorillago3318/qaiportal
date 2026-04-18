@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCallerProfile } from '@/lib/supabase/admin'
+import { getAdminClient, getCallerProfile } from '@/lib/supabase/admin'
 
 function getSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
@@ -130,6 +130,10 @@ export async function POST(request: NextRequest) {
     const agentProfile = await getCallerProfile(user.id)
     const agencyId = agentProfile?.agency_id
 
+    // Admin client bypasses RLS for all DB writes in this handler
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adminDb = getAdminClient() as any
+
     const body = await request.json()
 
     const {
@@ -219,6 +223,7 @@ export async function POST(request: NextRequest) {
       // Status from frontend
       status,
     } = body
+    // Note: body.client_id is read directly (not destructured) below in the client-upsert logic
 
     // Helper to convert DD/MM/YYYY to YYYY-MM-DD for database
     const convertDateToISO = (dateStr: string | null | undefined): string | null => {
@@ -234,79 +239,143 @@ export async function POST(request: NextRequest) {
       return null
     }
 
-    // Upsert client by ic_number
+    // ── Resolve client ID ──────────────────────────────────────────────────────
+    // Priority: (1) client_id already in body (pre-created by frontend upsertClient)
+    //           (2) look up by IC from body or bank_form_data
+    //           (3) create with whatever we have, using placeholder name if needed
+
+    // Pull client fields from bank_form_data as fallback (buildCasePayload puts them there)
+    const bfd = (bank_form_data as Record<string, unknown>) || {}
+    const resolvedName    = client_full_name || client_name || (bfd.client_name as string) || null
+    const resolvedIc      = client_ic_number || client_ic   || (bfd.client_ic as string)   || null
+    const resolvedPhone   = client_phone     || (bfd.client_phone as string)                || ''
+    const resolvedEmail   = client_email     || (bfd.client_email as string)                || null
+    const resolvedDob     = convertDateToISO(client_date_of_birth || client_dob || (bfd.client_dob as string))
+    const resolvedIncome  = client_monthly_income || monthly_income || (bfd.monthly_income as string) || null
+    const resolvedEmployer = client_employer || employer_name || (bfd.employer_name as string) || null
+    const resolvedGender  = client_gender  || gender  || (bfd.gender as string)  || null
+    const resolvedMarital = client_marital_status || marital_status || (bfd.marital_status as string) || null
+    const resolvedAddress = client_address || home_address || (bfd.home_address as string) || null
+
     let clientId: string
-    const icNumber = client_ic_number || client_ic
 
-    const { data: existingClient } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('ic_number', icNumber)
-      .single()
-
-    if (existingClient) {
-      clientId = existingClient.id
-      // Update client info with all fields
-      await supabase
+    // (1) Frontend already created / found a client — trust it
+    if (body.client_id) {
+      clientId = body.client_id
+      // Optionally update the client if we now have more info
+      if (resolvedName) {
+        await adminDb.from('clients').update({
+          full_name: resolvedName,
+          phone: resolvedPhone || undefined,
+          email: resolvedEmail,
+          date_of_birth: resolvedDob,
+          monthly_income: resolvedIncome ? Number(resolvedIncome) : null,
+          employer: resolvedEmployer,
+          gender: resolvedGender,
+          marital_status: resolvedMarital,
+          address: resolvedAddress,
+        }).eq('id', clientId)
+      }
+    } else if (resolvedIc) {
+      // (2) Try to find existing client by IC number
+      const { data: existingClient } = await adminDb
         .from('clients')
-        .update({
-          full_name: client_full_name || client_name,
-          phone: client_phone,
-          email: client_email || null,
-          date_of_birth: convertDateToISO(client_date_of_birth || client_dob),
-          monthly_income: client_monthly_income || monthly_income ? Number(client_monthly_income || monthly_income) : null,
-          employer: client_employer || employer_name || null,
-          gender: client_gender || gender || null,
-          marital_status: client_marital_status || marital_status || null,
-          residency_status: client_residency_status || residency_status || null,
-          address: client_address || home_address || null,
-        })
-        .eq('id', clientId)
+        .select('id')
+        .eq('ic_number', resolvedIc)
+        .maybeSingle()
+
+      if (existingClient) {
+        clientId = existingClient.id
+        if (resolvedName) {
+          await adminDb.from('clients').update({
+            full_name: resolvedName,
+            phone: resolvedPhone || undefined,
+            email: resolvedEmail,
+            date_of_birth: resolvedDob,
+            monthly_income: resolvedIncome ? Number(resolvedIncome) : null,
+            employer: resolvedEmployer,
+            gender: resolvedGender,
+            marital_status: resolvedMarital,
+            address: resolvedAddress,
+          }).eq('id', clientId)
+        }
+      } else {
+        // Create new client — use placeholder name if not yet entered (draft stage)
+        const { data: newClient, error: clientError } = await adminDb
+          .from('clients')
+          .insert({
+            full_name: resolvedName || 'Draft Client',
+            ic_number: resolvedIc,
+            phone: resolvedPhone,
+            email: resolvedEmail,
+            date_of_birth: resolvedDob,
+            monthly_income: resolvedIncome ? Number(resolvedIncome) : null,
+            employer: resolvedEmployer,
+            gender: resolvedGender,
+            marital_status: resolvedMarital,
+            address: resolvedAddress,
+            created_by: user.id,
+          })
+          .select('id')
+          .single()
+
+        if (clientError || !newClient) {
+          return NextResponse.json({ error: 'Failed to create client: ' + clientError?.message }, { status: 500 })
+        }
+        clientId = newClient.id
+      }
     } else {
-      // Insert new client with all fields
-      const { data: newClient, error: clientError } = await supabase
+      // (3) No IC and no existing client_id — create a bare placeholder so the draft can be saved
+      const { data: placeholderClient, error: placeholderErr } = await adminDb
         .from('clients')
         .insert({
-          full_name: client_full_name || client_name,
-          ic_number: icNumber,
-          phone: client_phone,
-          email: client_email || null,
-          date_of_birth: convertDateToISO(client_date_of_birth || client_dob),
-          monthly_income: client_monthly_income || monthly_income ? Number(client_monthly_income || monthly_income) : null,
-          employer: client_employer || employer_name || null,
-          gender: client_gender || gender || null,
-          marital_status: client_marital_status || marital_status || null,
-          residency_status: client_residency_status || residency_status || null,
-          address: client_address || home_address || null,
+          full_name: resolvedName || 'Draft Client',
+          ic_number: `DRAFT-${user.id.slice(0, 8)}-${Date.now()}`, // unique placeholder
+          phone: resolvedPhone,
+          email: resolvedEmail,
           created_by: user.id,
         })
         .select('id')
         .single()
 
-      if (clientError || !newClient) {
-        return NextResponse.json({ error: 'Failed to create client: ' + clientError?.message }, { status: 500 })
+      if (placeholderErr || !placeholderClient) {
+        return NextResponse.json({ error: 'Failed to create placeholder client: ' + placeholderErr?.message }, { status: 500 })
       }
-
-      clientId = newClient.id
+      clientId = placeholderClient.id
     }
 
-    // Prepare enhanced lawyer data
-    const lawyerData = lawyer_info || {}
-    const valuerData = valuer_info || {}
+    // Merge all extra fields into bank_form_data so nothing is lost
+    // (avoids "column not found" errors for fields that may not exist in the live DB)
+    const mergedBfd = {
+      ...(bank_form_data as Record<string, unknown> || {}),
+      // valuer detail fields stored here (not as individual columns)
+      valuer_1_firm: valuer_1_firm || null,
+      valuer_1_name: valuer_1_name || null,
+      valuer_1_date: valuer_1_date || null,
+      valuer_1_amount: valuer_1_amount || null,
+      valuer_2_firm: valuer_2_firm || null,
+      valuer_2_name: valuer_2_name || null,
+      valuer_2_date: valuer_2_date || null,
+      valuer_2_amount: valuer_2_amount || null,
+      // lawyer detail fields
+      lawyer_name_other: lawyer_name_other || null,
+      lawyer_firm_other: lawyer_firm_other || null,
+      lawyer_professional_fee: professional_fee || null,
+      has_lawyer_discount: has_lawyer_discount || false,
+      lawyer_discount_amount: lawyer_discount_amount || null,
+    }
 
-    // Insert case with all fields
-    console.log('Creating case with status:', status || 'draft')
-    console.log('Agent ID:', user.id)
-    console.log('Client ID:', clientId)
-    
-    const { data: newCase, error: caseError } = await supabase
+    // Insert case — only columns confirmed to exist in the live DB schema
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: newCase, error: caseError } = await (adminDb as any)
       .from('cases')
       .insert({
         agent_id: user.id,
         client_id: clientId,
+        agency_id: agencyId || null,
         calculation_id: body.calculation_id || null,
         loan_type: loan_type || 'refinance',
-        status: status || 'draft',  // Use status from frontend (draft/pending_signature/submitted)
+        status: status || 'draft',
         current_bank: current_bank || null,
         current_loan_amount: current_loan_amount ? Number(current_loan_amount) : null,
         current_interest_rate: current_interest_rate ? Number(current_interest_rate) : null,
@@ -315,54 +384,24 @@ export async function POST(request: NextRequest) {
         loan_type_detail: loan_type_detail || null,
         is_islamic: is_islamic || false,
         has_lock_in: has_lock_in || false,
-        property_address: property_address || null,
-        property_type: property_type || null,
-        property_title: property_title || null,
-        property_tenure: property_tenure || null,
-        property_value: property_value || purchase_price ? Number(property_value || purchase_price) : null,
-        property_size_land: property_size_land || land_size_sqft ? Number(property_size_land || land_size_sqft) : null,
-        property_size_buildup: property_size_buildup || buildup_size_sqft ? Number(property_size_buildup || buildup_size_sqft) : null,
-        proposed_bank_id: proposed_bank_id || null,
-        proposed_loan_amount: proposed_loan_amount || facility_amount ? Number(proposed_loan_amount || facility_amount) : null,
-        proposed_interest_rate: proposed_interest_rate || interest_rate ? Number(proposed_interest_rate || interest_rate) : null,
-        proposed_tenure_months: proposed_tenure_months || facility_tenure_months ? Number(proposed_tenure_months || facility_tenure_months) : null,
+        property_address: property_address || (bfd.property_address as string) || null,
+        property_type: property_type || (bfd.property_type as string) || null,
+        property_value: (property_value || purchase_price) ? Number(property_value || purchase_price) : null,
+        proposed_bank_id: proposed_bank_id || (bfd.proposed_bank_db_id as string) || null,
+        proposed_loan_amount: (proposed_loan_amount || facility_amount) ? Number(proposed_loan_amount || facility_amount) : null,
+        proposed_interest_rate: (proposed_interest_rate || interest_rate) ? Number(proposed_interest_rate || interest_rate) : null,
+        proposed_tenure_months: (proposed_tenure_months || facility_tenure_months) ? Number(proposed_tenure_months || facility_tenure_months) : null,
         has_cash_out: has_cash_out || false,
         cash_out_amount: cash_out_amount ? Number(cash_out_amount) : null,
         finance_legal_fees: finance_legal_fees || false,
         legal_fee_amount: legal_fee_amount ? Number(legal_fee_amount) : null,
         valuation_fee_amount: valuation_fee_amount ? Number(valuation_fee_amount) : null,
-        // Enhanced lawyer fields
-        lawyer_name_other: lawyerData.lawyer_name || lawyer_name_other || null,
-        lawyer_firm_other: lawyerData.law_firm_name || lawyer_firm_other || null,
-        lawyer_contact: lawyerData.contact_number || null,
-        lawyer_email: lawyerData.email || null,
-        lawyer_address: lawyerData.address || null,
-        has_lawyer: lawyerData.has_lawyer || false,
-        is_panel_lawyer: lawyerData.is_panel_lawyer || false,
-        lawyer_professional_fee: professional_fee ? Number(professional_fee) : null,
-        has_lawyer_discount: has_lawyer_discount || false,
-        lawyer_discount_amount: has_lawyer_discount && lawyer_discount_amount ? Number(lawyer_discount_amount) : null,
-        // Enhanced valuer fields
-        valuer_1_firm: valuerData.firm || valuer_1_firm || null,
-        valuer_1_name: valuerData.name || valuer_1_name || null,
-        valuer_1_date: convertDateToISO(valuerData.valuation_date) || valuer_1_date || null,
-        valuer_1_amount: valuer_1_amount ? Number(valuer_1_amount) : null,
-        valuer_contact: valuerData.contact_number || null,
-        valuer_email: valuerData.email || null,
-        valuation_fee_quoted: valuerData.valuation_fee_quoted ? Number(valuerData.valuation_fee_quoted) : null,
-        valuation_report_received: valuerData.report_received || false,
-        // Legacy valuer 2 fields (keep for backward compatibility)
-        valuer_2_firm: valuer_2_firm || null,
-        valuer_2_name: valuer_2_name || null,
-        valuer_2_date: valuer_2_date || null,
-        valuer_2_amount: valuer_2_amount ? Number(valuer_2_amount) : null,
         lawyer_case_types: [],
         has_co_broke: false,
-        agency_id: agencyId || null,
-        // Store complete bank form data as JSONB for future reference
-        bank_form_data: bank_form_data || null,
+        // Everything else lives in bank_form_data JSONB
+        bank_form_data: mergedBfd,
       })
-      .select('id, case_code')
+      .select('id, case_code, status, bank_form_data')
       .single()
 
     if (caseError) {
@@ -397,7 +436,7 @@ export async function POST(request: NextRequest) {
         role: cb.role || 'co_borrower',
       }))
 
-      const { error: coBorrowerError } = await supabase
+      const { error: coBorrowerError } = await adminDb
         .from('co_borrowers')
         .insert(coBorrowerInserts)
 
@@ -408,10 +447,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert initial status history
-    await supabase.from('case_status_history').insert({
+    await adminDb.from('case_status_history').insert({
       case_id: newCase.id,
       from_status: null,
-      to_status: 'draft',
+      to_status: status || 'draft',
       changed_by: user.id,
       notes: 'Case created',
     })

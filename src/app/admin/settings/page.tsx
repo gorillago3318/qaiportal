@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Landmark, Percent, Scale, Plus, Pencil, Check, X, Trash2 } from "lucide-react"
+import { Landmark, Percent, Scale, Plus, Pencil, Check, X, Trash2, AlertTriangle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -572,6 +572,66 @@ function LawyersTab() {
   )
 }
 
+// ── Danger Zone: Clear All Data ───────────────────────────────
+
+function DangerZone() {
+  const [confirming, setConfirming] = React.useState(false)
+  const [loading, setLoading] = React.useState(false)
+
+  const handleClear = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/clear-data', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Clear failed')
+      toast.success(json.message || 'All demo data cleared.')
+      if (json.errors?.length) {
+        toast.warning(`Some tables had issues: ${json.errors.join('; ')}`)
+      }
+      setConfirming(false)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to clear data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card className="border-red-200">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-red-700 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          Danger Zone
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-gray-600 mb-4">
+          Permanently deletes <strong>all calculations, cases, clients, commissions, lawyers and non-super-admin user accounts</strong>.
+          Only the super admin login is preserved. This cannot be undone.
+        </p>
+        {!confirming ? (
+          <Button variant="outline" className="border-red-400 text-red-600 hover:bg-red-50" onClick={() => setConfirming(true)}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Clear All Demo Data
+          </Button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <p className="text-sm font-semibold text-red-700">Are you sure? This is irreversible.</p>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleClear}
+              disabled={loading}
+            >
+              {loading ? 'Clearing...' : 'Yes, Clear Everything'}
+            </Button>
+            <Button variant="outline" onClick={() => setConfirming(false)} disabled={loading}>Cancel</Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Main Settings Page ─────────────────────────────────────────
 
 export default function AdminSettingsPage() {
@@ -617,6 +677,8 @@ export default function AdminSettingsPage() {
           {activeTab === "lawyers" && <LawyersTab />}
         </CardContent>
       </Card>
+
+      <DangerZone />
     </div>
   )
 }

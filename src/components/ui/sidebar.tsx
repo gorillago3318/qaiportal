@@ -22,6 +22,7 @@ import {
   Megaphone,
   BarChart2,
   Globe,
+  FileImage,
 } from "lucide-react"
 
 // ── Types ──────────────────────────────────────────────────
@@ -142,7 +143,11 @@ function NavItemComp({
 export function Sidebar({ variant, collapsed = false, onCollapse, isSuperAdmin = false }: SidebarProps) {
   const pathname = usePathname()
   const baseAdminItems = isSuperAdmin
-    ? [...adminNavItems, { href: "/admin/agencies", label: "Agencies", icon: Building2 }]
+    ? [
+        ...adminNavItems,
+        { href: "/admin/agencies",     label: "Agencies",      icon: Building2 },
+        { href: "/admin/convert-forms", label: "Convert Forms", icon: FileImage },
+      ]
     : adminNavItems
   const navItems = variant === "agent" ? agentNavItems : baseAdminItems
 
@@ -241,7 +246,7 @@ export function Topbar({
   onLogout,
 }: TopbarProps) {
   return (
-    <header className="h-[4.5rem] bg-white/80 backdrop-blur-2xl sticky top-0 z-10 border-b border-border/40 flex items-center justify-between px-8 flex-shrink-0">
+    <header className="h-[4.5rem] bg-white/80 backdrop-blur-2xl sticky top-0 z-10 border-b border-border/40 flex items-center justify-between px-4 sm:px-8 flex-shrink-0">
       <div className="flex items-center gap-4">
         {onMenuClick && (
           <button

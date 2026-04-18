@@ -38,22 +38,36 @@ export function calcMaxTenureMonths(dobString: string): number {
   return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44)))
 }
 
+/** Returns DD/MM/YYYY — e.g. 15/04/2026 */
 export function formatDate(dateStr: string): string {
-  return new Intl.DateTimeFormat('en-MY', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(dateStr))
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  return `${dd}/${mm}/${yyyy}`
 }
 
+/** Returns DD/MM/YYYY, HH:MM — e.g. 15/04/2026, 14:30 */
 export function formatDateTime(dateStr: string): string {
-  return new Intl.DateTimeFormat('en-MY', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(dateStr))
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}/${mm}/${yyyy}, ${hh}:${min}`
+}
+
+/** Formats a YYYY-MM-DD date string as DD/MM/YYYY (no timezone conversion) */
+export function formatDateOnly(dateStr: string): string {
+  if (!dateStr) return '—'
+  const parts = dateStr.split('T')[0].split('-')
+  if (parts.length !== 3) return dateStr
+  return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
 export function formatPercent(value: number, decimals = 2): string {

@@ -494,16 +494,8 @@ export const hlbConfig: BankFormConfig = {
             { label: 'Yes', value: 'yes' },
             { label: 'No', value: 'no' }
           ],
-          gridColumn: 1
-        },
-        {
-          id: 'legal_cost_amount',
-          label: 'Legal Cost Amount (RM) - Quotation Required',
-          type: 'currency',
-          required: true,
-          placeholder: 'Enter quoted legal cost amount',
-          conditional: { field: 'finance_legal_cost', equals: 'yes' },
-          gridColumn: 1
+          gridColumn: 2,
+          sub_field: { id: 'legal_cost_amount', label: 'Legal Cost Amount' }
         },
         {
           id: 'finance_valuation_cost',
@@ -514,16 +506,8 @@ export const hlbConfig: BankFormConfig = {
             { label: 'Yes', value: 'yes' },
             { label: 'No', value: 'no' }
           ],
-          gridColumn: 1
-        },
-        {
-          id: 'valuation_cost_amount',
-          label: 'Valuation Cost Amount (RM) - Quotation Required',
-          type: 'currency',
-          required: true,
-          placeholder: 'Enter quoted valuation cost amount',
-          conditional: { field: 'finance_valuation_cost', equals: 'yes' },
-          gridColumn: 1
+          gridColumn: 2,
+          sub_field: { id: 'valuation_cost_amount', label: 'Valuation Cost Amount' }
         },
         {
           id: 'current_bank_name',
@@ -932,158 +916,6 @@ export const hlbConfig: BankFormConfig = {
           conditional: { field: 'has_other_commitments', equals: 'yes' },
           placeholder: 'e.g., Maybank - Personal Loan - RM 50,000 - Outstanding RM 30,000',
           gridColumn: 2
-        }
-      ]
-    },
-    {
-      id: 'co_borrower_section',
-      title: 'Co-Borrower Information',
-      description: 'Add co-borrowers/guarantors if applicable (Note: This section is managed dynamically in the form)',
-      fields: [
-        {
-          id: 'has_co_borrower',
-          label: 'Do you have a co-borrower/guarantor?',
-          type: 'radio',
-          required: true,
-          options: [
-            { label: 'Yes', value: 'yes' },
-            { label: 'No', value: 'no' }
-          ],
-          gridColumn: 2
-        },
-        {
-          id: 'co_borrower_note',
-          label: 'Note',
-          type: 'text',
-          required: false,
-          defaultValue: 'Co-borrower details will be collected in a separate dynamic form with full personal and employment information.',
-          gridColumn: 2
-        }
-      ]
-    },
-    {
-      id: 'lawyer_valuer',
-      title: 'Lawyer & Valuer Information',
-      description: 'Professional service providers for this application',
-      fields: [
-        {
-          id: 'has_lawyer',
-          label: 'Do you have an appointed lawyer?',
-          type: 'radio',
-          required: true,
-          options: [
-            { label: 'Yes', value: 'yes' },
-            { label: 'No', value: 'no' }
-          ],
-          gridColumn: 2
-        },
-        {
-          id: 'lawyer_name',
-          label: 'Lawyer Name',
-          type: 'text',
-          required: false,
-          conditional: { field: 'has_lawyer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'lawyer_firm',
-          label: 'Law Firm Name',
-          type: 'text',
-          required: false,
-          conditional: { field: 'has_lawyer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'lawyer_contact',
-          label: 'Lawyer Contact Number',
-          type: 'tel',
-          required: false,
-          conditional: { field: 'has_lawyer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'lawyer_email',
-          label: 'Lawyer Email',
-          type: 'email',
-          required: false,
-          conditional: { field: 'has_lawyer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'has_valuer',
-          label: 'Valuers',
-          type: 'radio',
-          required: true,
-          options: [
-            { label: 'Yes (verbal quote obtained)', value: 'yes' },
-            { label: 'No, need quotation', value: 'need_quotation' },
-            { label: 'No', value: 'no' }
-          ],
-          gridColumn: 2
-        },
-        {
-          id: 'valuer_name',
-          label: 'Valuer 1 — Name',
-          type: 'text',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuer_firm',
-          label: 'Valuer 1 — Firm',
-          type: 'text',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuer_contact',
-          label: 'Valuer 1 — Contact',
-          type: 'tel',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuation_fee_quoted',
-          label: 'Valuer 1 — Indicative Value (RM)',
-          type: 'currency',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuer_2_name',
-          label: 'Valuer 2 — Name',
-          type: 'text',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuer_2_firm',
-          label: 'Valuer 2 — Firm',
-          type: 'text',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuer_2_contact',
-          label: 'Valuer 2 — Contact',
-          type: 'tel',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
-        },
-        {
-          id: 'valuer_2_fee_quoted',
-          label: 'Valuer 2 — Indicative Value (RM)',
-          type: 'currency',
-          required: false,
-          conditional: { field: 'has_valuer', equals: 'yes' },
-          gridColumn: 1
         }
       ]
     }

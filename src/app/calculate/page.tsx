@@ -7,7 +7,7 @@ import { Calculator, CheckCircle, ArrowRight, ArrowLeft, ChevronDown } from 'luc
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { calculateMonthlyInstalment, calculateRefinance } from '@/lib/calculations/loan'
-import { formatCurrency, calcMaxTenureMonths, monthsToYearsMonths } from '@/lib/utils'
+import { formatCurrency, formatDateOnly, calcMaxTenureMonths, monthsToYearsMonths } from '@/lib/utils'
 import type { Bank } from '@/types/database'
 
 // ─── Types ───────────────────────────────────────────────────
@@ -237,12 +237,29 @@ function PublicCalculatorInner() {
                     <input type="tel" value={form.clientPhone} onChange={e => update('clientPhone', e.target.value)} placeholder="+60 12-345 6789" className={inputCls} />
                   </Field>
                   <Field
-                    label="Date of Birth"
+                    label="Date of Birth (DD/MM/YYYY)"
                     hint={form.clientDob
-                      ? `${new Date(form.clientDob + 'T00:00:00').toLocaleDateString('en-GB')}${maxTenure ? ` · Max tenure: ${monthsToYearsMonths(maxTenure)}` : ''}`
+                      ? `✓ ${(() => { const [y,m,d] = form.clientDob.split('-'); return `${d}/${m}/${y}` })()}${maxTenure ? ` · Max tenure: ${monthsToYearsMonths(maxTenure)}` : ''}`
                       : 'Auto-filled from IC'}
                   >
-                    <input type="date" value={form.clientDob} onChange={e => update('clientDob', e.target.value)} className={inputCls} />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="DD/MM/YYYY"
+                      value={form.clientDob ? (() => { const [y,m,d] = form.clientDob.split('-'); return `${d}/${m}/${y}` })() : ""}
+                      onChange={e => {
+                        const raw = e.target.value.replace(/[^\d/]/g, "")
+                        if (raw.length === 10 && raw.includes('/')) {
+                          const parts = raw.split('/')
+                          if (parts.length === 3) {
+                            const [dd, mm, yyyy] = parts
+                            const iso = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                            if (!isNaN(new Date(iso + "T00:00:00").getTime())) update('clientDob', iso)
+                          }
+                        }
+                      }}
+                      className={inputCls}
+                    />
                   </Field>
                 </div>
               </div>

@@ -21,10 +21,16 @@ export default function AdminNetworkPage() {
     try {
       const res = await fetch('/api/network')
       const json = await res.json()
+      if (json.error) {
+        console.error('[admin/network] API error:', json.error)
+        return
+      }
       if (json.data) {
         setNodes(json.data)
-        setCurrentUserId(json.current_user_id)
+        setCurrentUserId(json.current_user_id ?? '')
       }
+    } catch (err) {
+      console.error('[admin/network] fetch failed:', err)
     } finally {
       setLoading(false)
     }

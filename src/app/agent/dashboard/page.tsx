@@ -335,15 +335,15 @@ export default function AgentDashboardPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-sm min-w-[340px]">
                     <thead>
                       <tr className="border-b border-[#E3E3E7]">
-                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3">Client</th>
-                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3">Type</th>
+                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 pl-4 sm:pl-0">Client</th>
+                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Type</th>
                         <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Est. Saving</th>
-                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Date</th>
-                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2">Action</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Date</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-4 sm:pr-0">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#ECECF0]">
@@ -352,12 +352,12 @@ export default function AgentDashboardPage() {
                         const monthlySavings = results?.monthlySavings ?? 0
                         return (
                           <tr key={calc.id} className="hover:bg-[#F5F5F8] transition-colors">
-                            <td className="py-3 pr-3">
+                            <td className="py-3 pr-3 pl-4 sm:pl-0">
                               <p className="font-medium text-[#17171A] truncate max-w-[120px]">
                                 {calc.client_name}
                               </p>
                             </td>
-                            <td className="py-3 pr-3">
+                            <td className="py-3 pr-3 hidden sm:table-cell">
                               <span className={cn(
                                 "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
                                 LOAN_TYPE_COLORS[calc.loan_type] || "bg-[#F3F3F6] text-[#4D4D56] border-[#DFDFE4]"
@@ -367,21 +367,21 @@ export default function AgentDashboardPage() {
                             </td>
                             <td className="py-3 pr-3 text-right">
                               {monthlySavings > 0 ? (
-                                <span className="font-medium text-green-700">
+                                <span className="font-medium text-green-700 text-xs sm:text-sm">
                                   +{formatCurrency(monthlySavings)}/mo
                                 </span>
                               ) : (
                                 <span className="text-zinc-400">—</span>
                               )}
                             </td>
-                            <td className="py-3 pr-3 text-right text-[#5F5F67]">
+                            <td className="py-3 pr-3 text-right text-[#5F5F67] hidden sm:table-cell">
                               {formatDate(calc.created_at)}
                             </td>
-                            <td className="py-3 text-right">
+                            <td className="py-3 text-right pr-4 sm:pr-0">
                               <Button variant="ghost" size="sm" asChild>
                                 <Link href={`/agent/calculations/${calc.id}`}>
                                   <Eye className="h-3 w-3" />
-                                  View
+                                  <span className="hidden sm:inline">View</span>
                                 </Link>
                               </Button>
                             </td>

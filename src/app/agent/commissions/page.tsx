@@ -172,17 +172,17 @@ export default function AgentCommissionsPage() {
               <p className="text-[#6B7280] text-sm max-w-xs">Commissions will appear here when your cases are approved.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[460px]">
                 <thead>
                   <tr className="border-b border-[#F3F4F6] bg-[#F9FAFB]">
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Case Code</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Loan Type</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Type</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Gross Amount</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">My Share</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Date</th>
+                    <th className="text-left px-3 sm:px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Case</th>
+                    <th className="text-left px-3 sm:px-4 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider hidden sm:table-cell">Loan Type</th>
+                    <th className="text-left px-3 sm:px-4 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider hidden md:table-cell">Type</th>
+                    <th className="text-left px-3 sm:px-4 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider hidden md:table-cell">Gross</th>
+                    <th className="text-left px-3 sm:px-4 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">My Share</th>
+                    <th className="text-left px-3 sm:px-4 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</th>
+                    <th className="text-left px-3 sm:px-4 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider hidden sm:table-cell">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#F3F4F6]">
@@ -194,27 +194,27 @@ export default function AgentCommissionsPage() {
                         : null
                     return (
                       <tr key={comm.id} className="hover:bg-[#F9FAFB] transition-colors">
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <span className="font-mono text-xs font-semibold text-[#0A1628]">{comm.case?.case_code || '—'}</span>
                         </td>
-                        <td className="px-6 py-4 text-[#6B7280]">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-[#6B7280] hidden sm:table-cell">
                           {comm.case?.loan_type ? LOAN_TYPE_LABELS[comm.case.loan_type] : '—'}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 hidden md:table-cell">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${comm.type === 'bank' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
                             {comm.type === 'bank' ? 'Bank' : 'Lawyer'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 font-medium text-[#0A1628]">{formatCurrency(comm.gross_amount)}</td>
-                        <td className="px-6 py-4 font-medium text-[#0A1628]">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-medium text-[#0A1628] hidden md:table-cell">{formatCurrency(comm.gross_amount)}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-medium text-[#0A1628]">
                           {myShare !== null ? formatCurrency(myShare) : formatCurrency(comm.net_distributable)}
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${commissionStatusColors[comm.status]}`}>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${commissionStatusColors[comm.status]}`}>
                             {commissionStatusLabels[comm.status]}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-[#6B7280] text-xs">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-[#6B7280] text-xs hidden sm:table-cell">
                           {comm.paid_at ? formatDate(comm.paid_at) : formatDate(comm.created_at)}
                         </td>
                       </tr>

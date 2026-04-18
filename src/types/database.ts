@@ -104,10 +104,14 @@ export interface Database {
       lawyers: {
         Row: {
           id: string
+          agency_id: string
           name: string
           firm: string
           phone: string | null
-          email: string | null
+          /** Official email — printed on bank forms */
+          general_email: string | null
+          /** Working contact email — used for LA/SPA/MOT quotation requests */
+          contact_email: string | null
           la_fee: number | null
           spa_fee: number | null
           mot_fee: number | null
@@ -149,6 +153,7 @@ export interface Database {
       calculations: {
         Row: {
           id: string
+          agency_id: string
           agent_id: string
           client_id: string | null
           client_name: string
@@ -189,6 +194,7 @@ export interface Database {
       cases: {
         Row: {
           id: string
+          agency_id: string
           case_code: string
           calculation_id: string | null
           agent_id: string
@@ -218,6 +224,11 @@ export interface Database {
           cash_out_amount: number | null
           cash_out_tenure_months: number | null
           lawyer_id: string | null
+          has_lawyer: boolean
+          is_panel_lawyer: boolean
+          lawyer_contact: string | null
+          lawyer_email: string | null
+          lawyer_address: string | null
           lawyer_name_other: string | null
           lawyer_firm_other: string | null
           lawyer_case_types: LawyerCaseType[]
@@ -226,8 +237,13 @@ export interface Database {
           has_lawyer_discount: boolean
           lawyer_discount_amount: number | null
           lawyer_quotation_url: string | null
+          has_valuer: boolean
           valuer_name: string | null
           valuer_firm: string | null
+          valuer_contact: string | null
+          valuer_email: string | null
+          valuation_fee_quoted: number | null
+          valuation_report_received: boolean
           valuer_1_firm: string | null
           valuer_1_name: string | null
           valuer_1_date: string | null
@@ -242,6 +258,11 @@ export interface Database {
           stamp_duty_amount: number | null
           has_co_broke: boolean
           admin_remarks: string | null
+          internal_notes: string | null
+          /** Dynamic bank-specific application form fields (set in src/config/bank-forms/) */
+          bank_form_data: Record<string, unknown> | null
+          /** Uploaded document URLs, keyed by document type */
+          documents: Record<string, string | string[]> | null
           verified_at: string | null
           created_at: string
           updated_at: string

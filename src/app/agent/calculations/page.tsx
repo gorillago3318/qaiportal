@@ -103,12 +103,12 @@ export default function CalculationsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-[#0A1628]">My Calculations</h1>
           <p className="text-gray-500 text-sm mt-1">Loan calculations and client proposals</p>
         </div>
-        <Button variant="gold" asChild>
+        <Button variant="gold" asChild className="self-start sm:self-auto">
           <Link href="/agent/calculations/new">
             <Plus className="h-4 w-4" />
             New Calculation
@@ -182,17 +182,17 @@ export default function CalculationsPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[360px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Client</th>
-                    <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Type</th>
-                    <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden md:table-cell">Banks</th>
-                    <th className="text-right text-xs font-medium text-gray-500 px-4 py-3">Monthly Saving</th>
-                    <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden sm:table-cell">Status</th>
-                    <th className="text-right text-xs font-medium text-gray-500 px-4 py-3 hidden sm:table-cell">Date</th>
-                    <th className="text-right text-xs font-medium text-gray-500 px-4 py-3">Actions</th>
+                    <th className="text-left text-xs font-medium text-gray-500 px-3 sm:px-4 py-3">Client</th>
+                    <th className="text-left text-xs font-medium text-gray-500 px-3 sm:px-4 py-3">Type</th>
+                    <th className="text-left text-xs font-medium text-gray-500 px-3 sm:px-4 py-3 hidden md:table-cell">Banks</th>
+                    <th className="text-right text-xs font-medium text-gray-500 px-3 sm:px-4 py-3">Monthly Saving</th>
+                    <th className="text-left text-xs font-medium text-gray-500 px-3 sm:px-4 py-3 hidden sm:table-cell">Status</th>
+                    <th className="text-right text-xs font-medium text-gray-500 px-3 sm:px-4 py-3 hidden sm:table-cell">Date</th>
+                    <th className="text-right text-xs font-medium text-gray-500 px-3 sm:px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -209,13 +209,13 @@ export default function CalculationsPage() {
 
                     return (
                       <tr key={calc.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-[#0A1628]">{calc.client_name}</p>
+                        <td className="px-3 sm:px-4 py-3">
+                          <p className="font-medium text-[#0A1628] text-xs sm:text-sm">{calc.client_name}</p>
                           {calc.client_ic && (
                             <p className="text-xs text-gray-400">{calc.client_ic}</p>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 sm:px-4 py-3">
                           <span className={cn(
                             "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
                             LOAN_TYPE_COLORS[calc.loan_type] || "bg-gray-50 text-gray-600 border-gray-200"
@@ -223,19 +223,19 @@ export default function CalculationsPage() {
                             {LOAN_TYPE_LABELS[calc.loan_type] || calc.loan_type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 hidden md:table-cell">
+                        <td className="px-3 sm:px-4 py-3 hidden md:table-cell">
                           <p className="text-gray-600 text-xs">{bankLabel || "—"}</p>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 sm:px-4 py-3 text-right">
                           {monthlySavings > 0 ? (
-                            <span className="font-semibold text-green-700">
+                            <span className="font-semibold text-green-700 text-xs sm:text-sm">
                               +{formatCurrency(monthlySavings)}/mo
                             </span>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 hidden sm:table-cell">
+                        <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                           <span className={cn(
                             "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
                             status.color
@@ -243,10 +243,10 @@ export default function CalculationsPage() {
                             {status.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-500 hidden sm:table-cell text-xs">
+                        <td className="px-3 sm:px-4 py-3 text-right text-gray-500 hidden sm:table-cell text-xs">
                           {formatDate(calc.created_at)}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 sm:px-4 py-3 text-right">
                           <div className="flex items-center gap-1 justify-end">
                             <Button variant="ghost" size="sm" asChild>
                               <Link href={`/agent/calculations/${calc.id}`}>

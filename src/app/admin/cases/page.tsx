@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { FolderOpen, Search, Download, ChevronLeft, ChevronRight } from "lucide-react"
+import { FolderOpen, Search, Download, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import { CASE_STATUS_LABELS, LOAN_TYPE_LABELS, type CaseStatus, type LoanType } from "@/types/database"
 
 type CaseRow = {
@@ -59,6 +59,26 @@ const PAGE_SIZE = 20
 export default function AdminCasesPage() {
   const [cases, setCases] = React.useState<CaseRow[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [confirmDelete, setConfirmDelete] = React.useState<string | null>(null)
+  const [deleting, setDeleting] = React.useState<string | null>(null)
+
+  const handleDelete = async (id: string) => {
+    setDeleting(id)
+    try {
+      const res = await fetch(`/api/cases/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const j = await res.json()
+        alert(j.error || 'Failed to delete case')
+        return
+      }
+      setCases(prev => prev.filter(c => c.id !== id))
+    } catch {
+      alert('Failed to delete case')
+    } finally {
+      setDeleting(null)
+      setConfirmDelete(null)
+    }
+  }
   const [search, setSearch] = React.useState("")
   const [debouncedSearch, setDebouncedSearch] = React.useState("")
   const [activeStatus, setActiveStatus] = React.useState<CaseStatus | "all">("all")
@@ -185,50 +205,78 @@ export default function AdminCasesPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-sm min-w-[480px]">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
-                      <th className="text-left px-6 py-3 font-medium text-gray-500">Case</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Client</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Agent</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500">Loan Amount</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Date</th>
-                      <th className="px-6 py-3" />
+                      <th className="text-left px-3 sm:px-6 py-3 font-medium text-gray-500">Case</th>
+                      <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500">Client</th>
+                      <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Agent</th>
+                      <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Type</th>
+                      <th className="text-right px-3 sm:px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Loan Amount</th>
+                      <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500">Status</th>
+                      <th className="text-left px-3 sm:px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Date</th>
+                      <th className="px-3 sm:px-6 py-3" />
                     </tr>
                   </thead>
                   <tbody>
                     {cases.map((c) => (
                       <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <span className="font-mono font-medium text-[#0A1628] text-xs">{c.case_code}</span>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="font-medium text-[#0A1628]">{c.client?.full_name || "—"}</div>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4">
+                          <div className="font-medium text-[#0A1628] text-xs sm:text-sm leading-snug">{c.client?.full_name || "—"}</div>
                           <div className="text-xs text-gray-400">{c.client?.ic_number || ""}</div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 hidden sm:table-cell">
                           <div className="text-[#0A1628]">{c.agent?.full_name || "—"}</div>
                           <div className="text-xs text-gray-400">{c.agent?.agent_code || ""}</div>
                         </td>
-                        <td className="px-4 py-4 text-gray-600">{LOAN_TYPE_LABELS[c.loan_type]}</td>
-                        <td className="px-4 py-4 text-right font-medium text-[#0A1628]">
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-gray-600 hidden md:table-cell">{LOAN_TYPE_LABELS[c.loan_type]}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-right font-medium text-[#0A1628] hidden md:table-cell">
                           {c.proposed_loan_amount ? formatCurrency(c.proposed_loan_amount) : "—"}
                         </td>
-                        <td className="px-4 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[c.status]}`}>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[c.status]}`}>
                             {CASE_STATUS_LABELS[c.status]}
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-gray-400 text-xs whitespace-nowrap">
-                          {new Date(c.created_at).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })}
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-gray-400 text-xs whitespace-nowrap hidden sm:table-cell">
+                          {formatDate(c.created_at)}
                         </td>
-                        <td className="px-6 py-4">
-                          <Link href={`/admin/cases/${c.id}`}>
-                            <Button variant="outline" size="sm">View</Button>
-                          </Link>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">
+                          <div className="flex items-center gap-2">
+                            <Link href={`/admin/cases/${c.id}`}>
+                              <Button variant="outline" size="sm">View</Button>
+                            </Link>
+                            {confirmDelete === c.id ? (
+                              <span className="flex items-center gap-1 text-xs">
+                                <span className="text-red-600 font-medium">Delete?</span>
+                                <button
+                                  onClick={() => handleDelete(c.id)}
+                                  disabled={deleting === c.id}
+                                  className="text-red-600 font-semibold hover:underline disabled:opacity-50"
+                                >
+                                  {deleting === c.id ? '…' : 'Yes'}
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDelete(null)}
+                                  className="text-gray-400 hover:text-gray-600"
+                                >
+                                  No
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDelete(c.id)}
+                                className="p-1 text-gray-300 hover:text-red-500 transition-colors rounded"
+                                title="Delete case"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
