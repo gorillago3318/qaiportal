@@ -5,12 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCurrency(amount: number, currency = 'MYR'): string {
+export function formatCurrency(amount: number | string | null | undefined, currency = 'MYR'): string {
+  const n = typeof amount === 'string' ? parseFloat(amount) : Number(amount)
   return new Intl.NumberFormat('ms-MY', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-  }).format(amount)
+  }).format(isFinite(n) ? n : 0)
 }
 
 export function formatNumber(num: number): string {

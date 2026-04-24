@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import type { Profile } from "@/types/database"
+import { ChangePasswordCard } from "@/components/shared/change-password-card"
 
 export default function AgentProfilePage() {
   const router = useRouter()
@@ -21,6 +22,7 @@ export default function AgentProfilePage() {
   const [bankName, setBankName] = React.useState("")
   const [bankAccountName, setBankAccountName] = React.useState("")
   const [bankAccountNumber, setBankAccountNumber] = React.useState("")
+  const [nricNumber, setNricNumber] = React.useState("")
 
   React.useEffect(() => {
     async function load() {
@@ -42,10 +44,12 @@ export default function AgentProfilePage() {
           bank_name?: string | null
           bank_account_name?: string | null
           bank_account_number?: string | null
+          nric_number?: string | null
         }
         setBankName(bankProfile.bank_name || "")
         setBankAccountName(bankProfile.bank_account_name || "")
         setBankAccountNumber(bankProfile.bank_account_number || "")
+        setNricNumber(bankProfile.nric_number || "")
       }
       setLoading(false)
     }
@@ -63,6 +67,7 @@ export default function AgentProfilePage() {
         bank_name: bankName,
         bank_account_name: bankAccountName,
         bank_account_number: bankAccountNumber,
+        nric_number: nricNumber,
       })
       .eq("id", profile.id)
 
@@ -110,7 +115,28 @@ export default function AgentProfilePage() {
         </CardContent>
       </Card>
 
-      <form onSubmit={handleSave}>
+      <form onSubmit={handleSave} className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Compliance Information</CardTitle>
+            <CardDescription>Required for tax reporting and commission payout compliance.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-white mb-1.5 block">NRIC Number</label>
+              <input
+                type="text"
+                placeholder="e.g. 901231-14-5678"
+                className="w-full h-10 px-3 text-sm rounded-lg border border-white/20 bg-black/35 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-white/70"
+                value={nricNumber}
+                onChange={(e) => setNricNumber(e.target.value)}
+                required
+              />
+              <p className="text-xs text-zinc-400 mt-1">Your IC is used for commission tax reporting. Admin can view but not edit after you set it.</p>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Bank Details</CardTitle>
@@ -154,12 +180,14 @@ export default function AgentProfilePage() {
             <div className="pt-4 flex justify-end">
               <Button type="submit" variant="gold" disabled={saving}>
                 {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Save Bank Details
+                Save Profile
               </Button>
             </div>
           </CardContent>
         </Card>
       </form>
+
+      <ChangePasswordCard />
     </div>
   )
 }

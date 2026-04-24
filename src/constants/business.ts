@@ -12,14 +12,12 @@
 // COMMISSION DEDUCTIONS (Bank)
 // ─────────────────────────────────────────────
 
-/** Flat deduction from every bank commission, always. */
-export const BANK_FLAT_DEDUCTION_RM = 50
-
 /**
- * Deduction from bank commission when a panel lawyer is used
- * (covers the Loan Agreement fee charged by panel lawyer to QAI).
+ * Flat admin fee deducted from every bank commission.
+ * Agent receives 100% of the remainder — no tier distribution.
+ * Confirmed 2026-04-24.
  */
-export const BANK_PANEL_LOAN_AGR_DEDUCTION_RM = 200
+export const BANK_FLAT_DEDUCTION_RM = 50
 
 // ─────────────────────────────────────────────
 // COMMISSION DEDUCTIONS (Lawyer — Panel Only)
@@ -32,10 +30,17 @@ export const BANK_PANEL_LOAN_AGR_DEDUCTION_RM = 200
 export const LAWYER_QAI_SHARE_PCT = 0.70
 
 /**
- * QAI's internal company cut from its own share.
+ * QAI's internal company cut from its own 70% share.
  * Kept by QuantifyAI, not distributed to agents.
  */
 export const LAWYER_COMPANY_CUT_PCT = 0.10
+
+/**
+ * Admin fee deducted from lawyer net distributable when a panel lawyer is used.
+ * Applied AFTER the company cut, BEFORE tier distribution.
+ * Confirmed 2026-04-24.
+ */
+export const LAWYER_PANEL_DEDUCTION_RM = 200
 
 // ─────────────────────────────────────────────
 // SUPER ADMIN PLATFORM FEE

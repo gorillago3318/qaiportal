@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getCallerProfile } from '@/lib/supabase/admin'
+import { getAdminClient, getCallerProfile } from '@/lib/supabase/admin'
 
 function getSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
@@ -34,8 +34,14 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
+    const caseIdFilter = searchParams.get('case_id')
 
-    let query = supabase
+    // Use adminClient to bypass RLS — we filter in application code below.
+    // This is necessary so upline agents (unit_manager, agency_manager) can see
+    // commissions where their user ID appears in tier_breakdown, not just cases
+    // where they are the direct agent.
+    const adminClient = getAdminClient() as any
+    let query = adminClient
       .from('commissions')
       .select(`
         id,
@@ -57,14 +63,14 @@ export async function GET(request: NextRequest) {
           case_code,
           loan_type,
           agent_id,
+          agency_id,
           agent:profiles!cases_agent_id_fkey(id, full_name, agent_code)
         )
       `)
       .order('created_at', { ascending: false })
 
-    if (status) {
-      query = query.eq('status', status)
-    }
+    if (status) query = query.eq('status', status)
+    if (caseIdFilter) query = query.eq('case_id', caseIdFilter)
 
     const { data, error } = await query
 
@@ -72,14 +78,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // For agents, filter to only their cases
-    let result = data || []
-    if (!isAdmin) {
-      result = result.filter((commission) => {
-        const caseData = commission.case as { agent_id?: string } | null
-        return caseData?.agent_id === user.id
-      })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let result: any[] = data || []
+
+    // When fetching by specific case_id (admin looking at one case), return all rows unfiltered
+    if (caseIdFilter) {
+      result = result.map((commission) => ({ ...commission, my_share: null }))
+      return NextResponse.json({ data: result })
     }
+
+    if (!isAdmin) {
+      // Show commission to an agent if:
+      // (a) they are the case's direct agent, OR
+      // (b) their user ID appears as a key in tier_breakdown (upline split)
+      result = result.filter((commission) => {
+        const caseData = commission.case as { agent_id?: string; agency_id?: string } | null
+        const isDirectAgent = caseData?.agent_id === user.id
+        const isInTierBreakdown =
+          commission.tier_breakdown != null &&
+          typeof commission.tier_breakdown === 'object' &&
+          user.id in commission.tier_breakdown
+        return isDirectAgent || isInTierBreakdown
+      })
+    } else {
+      // Admin: scope to their own agency
+      if (profile?.agency_id) {
+        result = result.filter((c) => {
+          const caseData = c.case as { agency_id?: string } | null
+          return caseData?.agency_id === profile.agency_id
+        })
+      }
+    }
+
+    // Add my_share: the amount this specific user earns from each commission row.
+    // For the direct agent it's their tier entry; for upline it's their tier entry too.
+    // For admin viewing all, this field is null.
+    result = result.map((commission) => {
+      const entry = commission.tier_breakdown?.[user.id]
+      return {
+        ...commission,
+        my_share: entry?.amount ?? null,
+      }
+    })
 
     return NextResponse.json({ data: result })
   } catch (err) {

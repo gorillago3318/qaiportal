@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ArrowRight, Check, CheckCircle, Loader2, Plus, X, Save, FileText, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle, Loader2, Plus, X, Save, FileText, Send, Upload, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { getBankFormConfig, getSupportedBanks, BankFormConfig } from '@/config/bank-forms'
+import { projectClientToBankForm, type ClientProfile } from '@/lib/client-profile-mapping'
 import { DynamicBankForm, getTotalSections } from '@/components/dynamic-bank-form'
 import { CasePrintView } from '@/components/case-print-view'
 import { CoBorrowerManager } from '@/components/co-borrower-manager'
@@ -272,7 +273,21 @@ interface CaseFormData {
   valuer_info: ValuerInfo | null
   lawyer_info: LawyerInfo | null
   notes: string
-  // Lawyer Selection (Step 4)
+  // ── Step 4: Loan Details ──────────────────────────────────────────────────
+  purchase_price_market_value: string  // property value / purchase price
+  home_loan_amount: string             // base loan before financed fees
+  home_loan_tenure: string             // tenure in years
+  cashout_amount: string               // cash-out (refinance only)
+  // Financed fees
+  // (finance_legal_cost & legal_cost_amount already exist above)
+  // (finance_valuation_cost & valuation_cost_amount already exist above)
+  // ── Step 4: Current Loan (refinance only) ────────────────────────────────
+  // (current_bank_name already exists above)
+  existing_outstanding: string         // current outstanding balance
+  existing_monthly: string             // current monthly instalment
+  existing_interest_rate: string       // current interest rate %
+  existing_tenure_years: string        // remaining tenure years
+  // ── Step 5: Lawyer Selection ─────────────────────────────────────────────
   selected_lawyer_type: 'panel' | 'others' | ''
   lawyer_id: string
   lawyer_professional_fee: string
@@ -392,7 +407,16 @@ const initialForm: CaseFormData = {
   valuer_info: null,
   lawyer_info: null,
   notes: '',
-  // Lawyer Selection (Step 4)
+  // Step 4 — Loan Details
+  purchase_price_market_value: '',
+  home_loan_amount: '',
+  home_loan_tenure: '',
+  cashout_amount: '',
+  existing_outstanding: '',
+  existing_monthly: '',
+  existing_interest_rate: '',
+  existing_tenure_years: '',
+  // Step 5 — Lawyer Selection
   selected_lawyer_type: '',
   lawyer_id: '',
   lawyer_professional_fee: '',
@@ -428,6 +452,8 @@ function NewCasePageInner() {
   const [restoredFromCache, setRestoredFromCache] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const isSavingRef = useRef(false)
+  const [pendingDocs, setPendingDocs] = useState<Array<{ type: string; file: File }>>([])
+  // doc categories are defined inside renderFinalReview
 
   // ── localStorage persistence key ─────────────────────────────
   const LS_KEY = 'qai_new_case_draft'
@@ -541,8 +567,9 @@ function NewCasePageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const bankSpecificSteps = bankConfig ? getTotalSections(bankConfig) : 0
-  const totalSteps = 4 + bankSpecificSteps // Step 1: Bank, Step 2: Client, Step 3: Co-Borrowers, Step 4: Lawyer, then bank sections
+  // Fixed 6-step wizard — bank configs have empty sections (all fields hardcoded)
+  const totalSteps = 6
+  const STEP_LABELS = ['Bank & Loan Type', 'Client Info', 'Co-Borrower', 'Loan Details', 'Lawyer', 'Documents & Submit']
 
   useEffect(() => {
     if (formData.selected_bank) {
@@ -828,6 +855,42 @@ function NewCasePageInner() {
     setFormData(prev => ({ ...prev, [fieldId]: value }))
   }
 
+  // ── Cross-bank client autofill ────────────────────────────────
+  // When the agent enters a client_ic (or pastes one), look up the clients
+  // table. If a matching profile exists (from a previous case), project it
+  // into the current bank-form keys. Only empties are filled — never clobbers
+  // what the agent has already typed.
+  const lookedUpIcRef = useRef<string>('')
+  useEffect(() => {
+    const ic = (formData.client_ic || '').trim()
+    if (!ic || ic.length < 6) return
+    if (ic === lookedUpIcRef.current) return
+    const bankId = bankConfig?.bankId
+    if (!bankId) return
+    lookedUpIcRef.current = ic
+
+    const controller = new AbortController()
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/clients/lookup?ic=${encodeURIComponent(ic)}`, { signal: controller.signal })
+        if (!res.ok) return
+        const { data } = await res.json() as { data: ClientProfile | null }
+        if (!data) return
+        setFormData(prev => {
+          const patch = projectClientToBankForm(data, bankId, prev as unknown as Record<string, unknown>)
+          if (Object.keys(patch).length === 0) return prev
+          toast.success(`Autofilled ${Object.keys(patch).length} field(s) from previous case for this IC`)
+          return { ...prev, ...patch } as CaseFormData
+        })
+      } catch {
+        // silent
+      }
+    }, 450)
+
+    return () => { clearTimeout(t); controller.abort() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.client_ic, bankConfig?.bankId])
+
   const validateStep = (step: number): boolean => {
     const newErrors: Record<string, string> = {}
 
@@ -866,64 +929,38 @@ function NewCasePageInner() {
       }
     }
 
-    // Validate lawyer selection (Step 4)
+    // Step 4 — Loan Details
     if (step === 4) {
-      if (!formData.selected_lawyer_type) {
-        newErrors.selected_lawyer_type = 'Please select lawyer type'
-      }
-      
-      if (formData.selected_lawyer_type === 'panel') {
-        if (!formData.lawyer_id) {
-          newErrors.lawyer_id = 'Please select a panel lawyer'
-        }
-        if (!formData.lawyer_professional_fee || parseFloat(formData.lawyer_professional_fee) <= 0) {
-          newErrors.lawyer_professional_fee = 'Professional fee is required and must be greater than 0'
-        }
-        if (formData.has_special_arrangement && (!formData.special_arrangement_discount || parseFloat(formData.special_arrangement_discount) <= 0)) {
-          newErrors.special_arrangement_discount = 'Discount amount is required when special arrangement is checked'
-        }
-      } else if (formData.selected_lawyer_type === 'others') {
-        if (!formData.lawyer_name_other.trim()) {
-          newErrors.lawyer_name_other = 'Lawyer name is required'
-        }
-        if (!formData.lawyer_firm_other.trim()) {
-          newErrors.lawyer_firm_other = 'Law firm is required'
-        }
-      }
+      if (!formData.purchase_price_market_value || parseFloat(formData.purchase_price_market_value) <= 0)
+        newErrors.purchase_price_market_value = 'Property value / purchase price is required'
+      if (!formData.home_loan_amount || parseFloat(formData.home_loan_amount) <= 0)
+        newErrors.home_loan_amount = 'Loan amount is required'
+      if (!formData.home_loan_tenure || parseFloat(formData.home_loan_tenure) <= 0)
+        newErrors.home_loan_tenure = 'Loan tenure is required'
+      if (formData.finance_legal_cost && (!formData.legal_cost_amount || parseFloat(formData.legal_cost_amount) <= 0))
+        newErrors.legal_cost_amount = 'Legal fee amount is required when financing legal fees'
+      if (formData.finance_valuation_cost && (!formData.valuation_cost_amount || parseFloat(formData.valuation_cost_amount) <= 0))
+        newErrors.valuation_cost_amount = 'Valuation fee amount is required when financing valuation fees'
+      if (formData.loan_type === 'refinance' && !formData.current_bank_name)
+        newErrors.current_bank_name = 'Current financier is required for refinance'
     }
 
-    // Validate dynamic bank form fields (steps 5+)
-    if (bankConfig && step > 4 && step <= 4 + bankSpecificSteps) {
-      const sectionIndex = step - 5
-      const section = bankConfig.sections[sectionIndex]
-      
-      if (section) {
-        section.fields.forEach(field => {
-          if (field.type === 'group_header') return
-          if (field.required) {
-            // Check if field has conditional logic and should be visible
-            let shouldValidate = true
-            
-            if (field.conditional) {
-              if (field.conditional.custom_logic) {
-                shouldValidate = field.conditional.custom_logic(formData)
-              } else if (field.conditional.not_equals !== undefined) {
-                shouldValidate = formData[field.conditional.field] !== field.conditional.not_equals
-              } else if (field.conditional.equals !== undefined) {
-                shouldValidate = formData[field.conditional.field] === field.conditional.equals
-              }
-            }
-            
-            // Only validate if field should be visible
-            if (shouldValidate) {
-              const value = formData[field.id]
-              
-              if (!value || (typeof value === 'string' && !value.trim())) {
-                newErrors[field.id] = `${field.label} is required`
-              }
-            }
-          }
-        })
+    // Step 5 — Lawyer Selection
+    if (step === 5) {
+      if (!formData.selected_lawyer_type)
+        newErrors.selected_lawyer_type = 'Please select lawyer type'
+      if (formData.selected_lawyer_type === 'panel') {
+        if (!formData.lawyer_id)
+          newErrors.lawyer_id = 'Please select a panel lawyer'
+        if (!formData.lawyer_professional_fee || parseFloat(formData.lawyer_professional_fee) <= 0)
+          newErrors.lawyer_professional_fee = 'Professional fee is required and must be greater than 0'
+        if (formData.has_special_arrangement && (!formData.special_arrangement_discount || parseFloat(formData.special_arrangement_discount) <= 0))
+          newErrors.special_arrangement_discount = 'Discount amount is required when special arrangement is checked'
+      } else if (formData.selected_lawyer_type === 'others') {
+        if (!formData.lawyer_name_other.trim())
+          newErrors.lawyer_name_other = 'Lawyer name is required'
+        if (!formData.lawyer_firm_other.trim())
+          newErrors.lawyer_firm_other = 'Law firm is required'
       }
     }
 
@@ -979,29 +1016,59 @@ function NewCasePageInner() {
   }
 
   // Build the case payload from current formData (shared by draft + submit)
-  const buildCasePayload = (agentId: string) => ({
-    agent_id: agentId,
-    loan_type: formData.loan_type || 'refinance',
-    proposed_bank_id: formData.proposed_bank_db_id || null,
-    proposed_loan_amount: formData.facility_amount ? parseFloat(formData.facility_amount) : null,
-    status: 'draft',
-    bank_form_data: {
-      // Spread ALL formData so dynamic section fields are never omitted
-      ...formData,
-      // Override fields that need numeric type conversion
-      no_of_dependants: parseInt(formData.no_of_dependants) || 0,
-      length_service_years: parseInt(formData.length_service_years) || 0,
-      length_service_months: parseInt(formData.length_service_months) || 0,
-      monthly_income: parseFloat(formData.monthly_income) || 0,
-      lawyer_id: formData.lawyer_id || null,
-      lawyer_professional_fee: formData.lawyer_professional_fee
-        ? parseFloat(formData.lawyer_professional_fee)
-        : null,
-      special_arrangement_discount: formData.special_arrangement_discount
-        ? parseFloat(formData.special_arrangement_discount)
-        : null,
-    }
-  })
+  const buildCasePayload = (agentId: string) => {
+    // ── Compute proposed loan amount ─────────────────────────────────────────
+    // Base loan + optionally-financed legal fee + optionally-financed valuation fee + cash-out
+    const baseAmt    = parseFloat(formData.home_loan_amount) || 0
+    const legalAmt   = formData.finance_legal_cost   ? (parseFloat(formData.legal_cost_amount)    || 0) : 0
+    const valuerAmt  = formData.finance_valuation_cost? (parseFloat(formData.valuation_cost_amount) || 0) : 0
+    const cashoutAmt = parseFloat(formData.cashout_amount) || 0
+    const totalLoan  = Math.round((baseAmt + legalAmt + valuerAmt + cashoutAmt) * 100) / 100
+
+    return ({
+      agent_id: agentId,
+      loan_type: formData.loan_type || 'refinance',
+      proposed_bank_id: formData.proposed_bank_db_id || null,
+      proposed_loan_amount: totalLoan || null,
+      legal_fee_amount: legalAmt || null,
+      valuation_fee_amount: valuerAmt || null,
+      finance_legal_fees: legalAmt > 0 || valuerAmt > 0,
+      has_cash_out: cashoutAmt > 0,
+      cash_out_amount: cashoutAmt || null,
+      // Map current-loan fields to DB columns
+      current_bank: formData.current_bank_name || null,
+      current_loan_amount: parseFloat(formData.existing_outstanding) || null,
+      current_monthly_instalment: parseFloat(formData.existing_monthly) || null,
+      current_interest_rate: parseFloat(formData.existing_interest_rate) || null,
+      current_tenure_months: formData.existing_tenure_years ? (parseFloat(formData.existing_tenure_years) * 12) : null,
+      property_value: parseFloat(formData.purchase_price_market_value) || null,
+      // Lawyer — written to top-level FK columns so admin can join/query directly
+      lawyer_id: formData.selected_lawyer_type === 'panel' ? (formData.lawyer_id || null) : null,
+      lawyer_name_other: formData.selected_lawyer_type === 'others' ? (formData.lawyer_name_other || null) : null,
+      lawyer_firm_other: formData.selected_lawyer_type === 'others' ? (formData.lawyer_firm_other || null) : null,
+      lawyer_professional_fee: formData.selected_lawyer_type === 'panel' && formData.lawyer_professional_fee
+        ? parseFloat(formData.lawyer_professional_fee) : null,
+      status: 'draft',
+      bank_form_data: {
+        // Spread ALL formData so every field is preserved in JSONB
+        ...formData,
+        // Numeric overrides
+        no_of_dependants: parseInt(formData.no_of_dependants) || 0,
+        length_service_years: parseInt(formData.length_service_years) || 0,
+        length_service_months: parseInt(formData.length_service_months) || 0,
+        monthly_income: parseFloat(formData.monthly_income) || 0,
+        lawyer_id: formData.lawyer_id || null,
+        lawyer_professional_fee: formData.lawyer_professional_fee
+          ? parseFloat(formData.lawyer_professional_fee)
+          : null,
+        special_arrangement_discount: formData.special_arrangement_discount
+          ? parseFloat(formData.special_arrangement_discount)
+          : null,
+        // Computed total for display/PDF
+        total_financing_amount: totalLoan || null,
+      }
+    })
+  }
 
   // Upsert client record from form data. Returns client id or null if insufficient data.
   const upsertClient = async (supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> => {
@@ -1125,12 +1192,24 @@ function NewCasePageInner() {
 
       const clientId = await upsertClient(supabase, user.id)
 
+      // Upload any pending documents to Supabase Storage
+      const caseIdForUpload = savedCaseId || 'new'
+      const uploadedDocs: Array<{ document_type: string; file_name: string; file_url: string; file_size: number }> = []
+      for (const { type, file } of pendingDocs) {
+        const ext = file.name.split('.').pop()
+        const path = `${caseIdForUpload}/${type.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${ext}`
+        const { error: upErr } = await supabase.storage.from('case-documents').upload(path, file)
+        if (upErr) throw new Error(`Upload failed for ${type}: ${upErr.message}`)
+        const { data: urlData } = supabase.storage.from('case-documents').getPublicUrl(path)
+        uploadedDocs.push({ document_type: type, file_name: file.name, file_url: urlData.publicUrl, file_size: file.size })
+      }
+
       if (savedCaseId) {
         // Case already saved — PATCH status to submitted
         const res = await fetch(`/api/cases/${savedCaseId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...buildCasePayload(user.id), status: 'submitted' }),
+          body: JSON.stringify({ ...buildCasePayload(user.id), status: 'submitted', notes: 'Case submitted by agent.', new_documents: uploadedDocs }),
         })
         if (!res.ok) {
           const j = await res.json()
@@ -1138,7 +1217,7 @@ function NewCasePageInner() {
         }
       } else {
         // Not saved yet — INSERT via API (ensures agency_id is set, avoids RLS)
-        const payload = { ...buildCasePayload(user.id), client_id: clientId, status: 'submitted' }
+        const payload = { ...buildCasePayload(user.id), client_id: clientId, status: 'submitted', new_documents: uploadedDocs }
         const res = await fetch('/api/cases', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1163,6 +1242,211 @@ function NewCasePageInner() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // ─── Step 4: Loan Details ────────────────────────────────────────────────
+  const renderStep4_LoanDetails = () => {
+    const isRefinance = formData.loan_type === 'refinance'
+    const base    = parseFloat(formData.home_loan_amount)    || 0
+    const legal   = formData.finance_legal_cost    ? (parseFloat(formData.legal_cost_amount)    || 0) : 0
+    const valuer  = formData.finance_valuation_cost ? (parseFloat(formData.valuation_cost_amount) || 0) : 0
+    const cashout = isRefinance ? (parseFloat(formData.cashout_amount) || 0) : 0
+    const total   = base + legal + valuer + cashout
+
+    const MY_BANKS_LIST = [
+      'Maybank','CIMB Bank','Public Bank','RHB Bank','Hong Leong Bank',
+      'AmBank','OCBC Bank','UOB Malaysia','Standard Chartered','HSBC Bank Malaysia',
+      'Alliance Bank','Affin Bank','Bank Islam','Bank Muamalat','BSN','MBSB Bank','Citibank Malaysia',
+    ]
+
+    const numInput = (field: keyof CaseFormData, label: string, required = false, prefix?: string) => (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {label}{required && <span className="text-red-500"> *</span>}
+        </label>
+        <div className="relative">
+          {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">{prefix}</span>}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={(formData as any)[field] ?? ''}
+            onChange={e => handleInputChange(field, e.target.value)}
+            className={cn(
+              'w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500',
+              prefix ? 'pl-10' : '',
+              (errors as any)[field] ? 'border-red-500' : 'border-gray-300'
+            )}
+          />
+        </div>
+        {(errors as any)[field] && <p className="text-red-500 text-xs mt-1">{(errors as any)[field]}</p>}
+      </div>
+    )
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Loan Details</h2>
+          <p className="text-gray-600 mt-1">Property value, loan amount, fees, and total financing</p>
+        </div>
+
+        {/* ── Property ── */}
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-800">Property</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {numInput('purchase_price_market_value', 'Purchase Price / Market Value (RM)', true, 'RM')}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── New Loan ── */}
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-800">New Loan</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {numInput('home_loan_amount', 'Base Loan Amount (RM)', true, 'RM')}
+              {numInput('home_loan_tenure', 'Loan Tenure (Years)', true)}
+            </div>
+
+            {/* Cash-out for refinance */}
+            {isRefinance && (
+              <div className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <input
+                    type="checkbox"
+                    id="hasCashout"
+                    checked={!!formData.cashout_amount && parseFloat(formData.cashout_amount) > 0}
+                    onChange={e => { if (!e.target.checked) handleInputChange('cashout_amount', '') }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor="hasCashout" className="text-sm font-medium text-gray-700">Include Cash-Out Component</label>
+                </div>
+                {numInput('cashout_amount', 'Cash-Out Amount (RM)', false, 'RM')}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Financed Fees ── */}
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-800">Finance Fees into Loan?</h3>
+            <p className="text-sm text-gray-500 -mt-2">If yes, these amounts are added to the total loan and earn bank commission.</p>
+
+            {/* Legal */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="financeLegal"
+                  checked={formData.finance_legal_cost}
+                  onChange={e => {
+                    handleInputChange('finance_legal_cost', e.target.checked)
+                    if (!e.target.checked) handleInputChange('legal_cost_amount', '')
+                  }}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="financeLegal" className="text-sm font-medium text-gray-700">Finance Legal Fees</label>
+              </div>
+              {formData.finance_legal_cost && (
+                <div className="ml-6">
+                  {numInput('legal_cost_amount', 'Legal Fee Amount (RM)', true, 'RM')}
+                </div>
+              )}
+            </div>
+
+            {/* Valuation */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="financeValuation"
+                  checked={formData.finance_valuation_cost}
+                  onChange={e => {
+                    handleInputChange('finance_valuation_cost', e.target.checked)
+                    if (!e.target.checked) handleInputChange('valuation_cost_amount', '')
+                  }}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="financeValuation" className="text-sm font-medium text-gray-700">Finance Valuation Fees</label>
+              </div>
+              {formData.finance_valuation_cost && (
+                <div className="ml-6">
+                  {numInput('valuation_cost_amount', 'Valuation Fee Amount (RM)', true, 'RM')}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Total ── */}
+        <div className={cn(
+          'rounded-xl p-5 border-2',
+          total > 0 ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-200'
+        )}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Loan Amount</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {base > 0 ? `RM ${base.toLocaleString()} base` : ''}
+                {legal  > 0 ? ` + RM ${legal.toLocaleString()} legal` : ''}
+                {valuer > 0 ? ` + RM ${valuer.toLocaleString()} valuation` : ''}
+                {cashout > 0 ? ` + RM ${cashout.toLocaleString()} cash-out` : ''}
+              </p>
+            </div>
+            <p className={cn(
+              'text-2xl font-bold',
+              total > 0 ? 'text-blue-700' : 'text-gray-400'
+            )}>
+              {total > 0 ? `RM ${total.toLocaleString()}` : '—'}
+            </p>
+          </div>
+          {total > 0 && (
+            <p className="text-xs text-blue-600 mt-2">
+              💡 Bank commission is calculated on this total amount. Lawyer commission is based on professional fee (entered in the next step).
+            </p>
+          )}
+        </div>
+
+        {/* ── Current Loan (refinance only) ── */}
+        {isRefinance && (
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <h3 className="text-base font-semibold text-gray-800">Current Loan</h3>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Current Financier <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.current_bank_name}
+                  onChange={e => handleInputChange('current_bank_name', e.target.value)}
+                  className={cn(
+                    'w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500',
+                    errors.current_bank_name ? 'border-red-500' : 'border-gray-300'
+                  )}
+                >
+                  <option value="">Select current bank…</option>
+                  {MY_BANKS_LIST.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                {errors.current_bank_name && <p className="text-red-500 text-xs mt-1">{errors.current_bank_name}</p>}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {numInput('existing_outstanding',  'Outstanding Balance (RM)',   false, 'RM')}
+                {numInput('existing_monthly',      'Monthly Instalment (RM)',    false, 'RM')}
+                {numInput('existing_interest_rate','Current Interest Rate (%)', false)}
+                {numInput('existing_tenure_years', 'Remaining Tenure (Years)',  false)}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    )
+  }
+
+  // ─── Step 5: Lawyer Selection (commission source 2) ─────────────────────
+  const renderStep5_LawyerSelection = () => {
+    return renderStep4_LawyerSelection()
   }
 
   const renderStep4_LawyerSelection = () => {
@@ -1429,54 +1713,13 @@ function NewCasePageInner() {
     }
 
     switch (currentStep) {
-      case 1:
-        return renderStep1_BankSelection()
-      case 2:
-        return renderStep2_ClientInfo()
-      case 3:
-        return renderStep3_CoBorrowers()
-      case 4:
-        return renderStep4_LawyerSelection()
-      default:
-        if (bankConfig && currentStep > 4 && currentStep <= 4 + bankSpecificSteps) {
-          const sectionIndex = currentStep - 5
-          const section = bankConfig.sections[sectionIndex]
-          if (section) {
-            return (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">{section.title}</h2>
-                    {section.description && (
-                      <p className="text-gray-600 mt-1">{section.description}</p>
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Section {sectionIndex + 1} of {bankSpecificSteps}
-                  </div>
-                </div>
-                
-                <Card>
-                  <CardContent className="p-6">
-                    <DynamicBankForm
-                      config={bankConfig}
-                      formData={formData}
-                      onChange={handleDynamicFormChange}
-                      errors={errors}
-                      currentSectionIndex={sectionIndex}
-                    />
-                  </CardContent>
-                </Card>
-              </div>
-            )
-          }
-        }
-        
-        if (currentStep === totalSteps) {
-          return renderFinalReview()
-        }
-        
-        return null
+      case 1:  return renderStep1_BankSelection()
+      case 2:  return renderStep2_ClientInfo()
+      case 3:  return renderStep3_CoBorrowers()
+      case 4:  return renderStep4_LoanDetails()
+      case 5:  return renderStep5_LawyerSelection()
+      case 6:  return renderFinalReview()
+      default: return null
     }
   }
 
@@ -1774,44 +2017,173 @@ function NewCasePageInner() {
   }
 
   const renderFinalReview = () => {
+    const base    = parseFloat(formData.home_loan_amount) || 0
+    const legal   = formData.finance_legal_cost    ? (parseFloat(formData.legal_cost_amount)    || 0) : 0
+    const valuer  = formData.finance_valuation_cost ? (parseFloat(formData.valuation_cost_amount) || 0) : 0
+    const cashout = parseFloat(formData.cashout_amount) || 0
+    const total   = base + legal + valuer + cashout
+    const propertyVal = parseFloat(formData.purchase_price_market_value) || 0
+
+    // ── doc categories ───────────────────────────────────────────────────────
+    const DOC_CATEGORIES = [
+      {
+        key: 'Application Form',
+        label: 'Application Form',
+        hint: 'Signed bank application form',
+        icon: '📄',
+      },
+      {
+        key: 'Personal Document',
+        label: 'Personal Documents',
+        hint: 'IC / passport (front & back)',
+        icon: '🪪',
+      },
+      {
+        key: 'Income Document',
+        label: 'Income Documents',
+        hint: 'Latest 3 months payslip, EA form, or bank statement',
+        icon: '💰',
+      },
+      {
+        key: 'Property Document',
+        label: 'Property Documents',
+        hint: 'SPA, title deed, valuation report',
+        icon: '🏠',
+      },
+    ]
+
+    const addFiles = (category: string, files: FileList | null) => {
+      if (!files) return
+      const newDocs = Array.from(files).map(file => ({ type: category, file }))
+      setPendingDocs(prev => [...prev, ...newDocs])
+    }
+
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Review & Submit</h2>
-          <p className="text-gray-600 mt-1">Review all information before submitting the case</p>
+          <h2 className="text-2xl font-bold text-gray-900">Documents & Submit</h2>
+          <p className="text-gray-600 mt-1">Upload supporting documents, then submit for admin review</p>
         </div>
 
+        {/* ── Case Summary ── */}
         <Card>
-          <CardContent className="p-6 space-y-6">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-blue-900 mb-2">Case Summary</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Bank:</span>
-                  <p className="font-medium capitalize">{formData.selected_bank.replace(/_/g, ' ')}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Client:</span>
-                  <p className="font-medium">{formData.client_name}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Loan Amount:</span>
-                  <p className="font-medium">RM {parseFloat(formData.facility_amount || '0').toLocaleString()}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Tenure:</span>
-                  <p className="font-medium">{formData.loan_tenure} years</p>
-                </div>
+          <CardContent className="p-6">
+            <h3 className="font-semibold text-gray-900 mb-3">Case Summary</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <p className="text-gray-500 text-xs">Bank</p>
+                <p className="font-semibold">{bankConfig?.bankName || formData.selected_bank.replace(/_/g,' ')}</p>
               </div>
-            </div>
-
-            <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                <strong>Note:</strong> Once submitted, this case will be saved as a draft. You can continue editing it later or submit it for processing.
-              </p>
+              <div>
+                <p className="text-gray-500 text-xs">Client</p>
+                <p className="font-semibold">{formData.client_name || '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Loan Type</p>
+                <p className="font-semibold capitalize">{formData.loan_type || '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Property Value</p>
+                <p className="font-semibold">{propertyVal > 0 ? `RM ${propertyVal.toLocaleString()}` : '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Total Loan</p>
+                <p className="font-semibold text-blue-700">{total > 0 ? `RM ${total.toLocaleString()}` : '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Tenure</p>
+                <p className="font-semibold">{formData.home_loan_tenure ? `${formData.home_loan_tenure} yrs` : '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Lawyer</p>
+                <p className="font-semibold">
+                  {formData.selected_lawyer_type === 'panel'
+                    ? `Panel — RM ${parseFloat(formData.lawyer_professional_fee || '0').toLocaleString()} fee`
+                    : formData.selected_lawyer_type === 'others'
+                      ? `Non-Panel — ${formData.lawyer_name_other || '—'}`
+                      : '—'}
+                </p>
+              </div>
+              {formData.loan_type === 'refinance' && formData.current_bank_name && (
+                <div>
+                  <p className="text-gray-500 text-xs">Current Bank</p>
+                  <p className="font-semibold">{formData.current_bank_name}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
+
+        {/* ── Document Upload — 4 categories ── */}
+        <Card>
+          <CardContent className="p-6 space-y-5">
+            <div>
+              <h3 className="font-semibold text-gray-900">Upload Documents</h3>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Optional at this stage — you can also upload from the case detail page after saving.
+              </p>
+            </div>
+
+            {DOC_CATEGORIES.map(cat => {
+              const catDocs = pendingDocs.filter(d => d.type === cat.key)
+              return (
+                <div key={cat.key} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{cat.icon} {cat.label}</p>
+                      <p className="text-xs text-gray-400">{cat.hint}</p>
+                    </div>
+                    <label className={cn(
+                      'cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                      'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                    )}>
+                      <Upload className="h-3.5 w-3.5" />
+                      Add Files
+                      <input
+                        type="file"
+                        multiple
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                        className="hidden"
+                        onChange={e => addFiles(cat.key, e.target.files)}
+                      />
+                    </label>
+                  </div>
+                  {catDocs.length > 0 && (
+                    <ul className="space-y-1">
+                      {catDocs.map((d, i) => {
+                        const globalIdx = pendingDocs.findIndex((p, gi) => p === d && pendingDocs.indexOf(d) === gi)
+                        return (
+                          <li key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-1.5 text-xs">
+                            <span className="text-gray-700 truncate max-w-[280px]">{d.file.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDocs(prev => prev.filter(p => p !== d))}
+                              className="text-red-400 hover:text-red-600 ml-2 shrink-0"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+
+            {pendingDocs.length > 0 && (
+              <p className="text-xs text-green-600 font-medium">
+                ✓ {pendingDocs.length} file{pendingDocs.length > 1 ? 's' : ''} ready to upload on submit
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg">
+          <p className="text-sm text-amber-800">
+            <strong>After submission:</strong> Admin will review your case. You cannot edit once submitted unless admin returns it as KIV.
+          </p>
+        </div>
       </div>
     )
   }
@@ -1848,7 +2220,10 @@ function NewCasePageInner() {
             
             {!showPrintView && (
               <div className="flex items-center gap-3">
-                <div className="text-sm text-gray-600">Step {currentStep} of {totalSteps}</div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400 uppercase tracking-wide">Step {currentStep} of {totalSteps}</div>
+                  <div className="text-sm font-semibold text-gray-700">{STEP_LABELS[currentStep - 1]}</div>
+                </div>
                 {autoSaveStatus === 'saving' && (
                   <span className="flex items-center gap-1 text-xs text-gray-400">
                     <Loader2 className="w-3 h-3 animate-spin" />Saving…
@@ -1892,9 +2267,34 @@ function NewCasePageInner() {
 
         {!showPrintView && (
           <div className="mb-8">
-            <div className="h-2 bg-gray-200 rounded-full">
+            {/* Step pills */}
+            <div className="flex items-center gap-1 mb-3 overflow-x-auto">
+              {STEP_LABELS.map((label, i) => {
+                const step = i + 1
+                const done = step < currentStep
+                const active = step === currentStep
+                return (
+                  <React.Fragment key={step}>
+                    <div className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all',
+                      done   ? 'bg-blue-600 text-white' :
+                      active ? 'bg-blue-100 text-blue-700 border border-blue-300' :
+                               'bg-gray-100 text-gray-400'
+                    )}>
+                      {done ? <Check className="h-3 w-3" /> : <span>{step}</span>}
+                      {label}
+                    </div>
+                    {i < STEP_LABELS.length - 1 && (
+                      <div className={cn('h-0.5 flex-1 min-w-[8px]', done ? 'bg-blue-600' : 'bg-gray-200')} />
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </div>
+            {/* thin progress bar */}
+            <div className="h-1 bg-gray-200 rounded-full">
               <div
-                className="h-2 bg-blue-600 rounded-full transition-all duration-300"
+                className="h-1 bg-blue-600 rounded-full transition-all duration-300"
                 style={{ width: ((currentStep / totalSteps) * 100) + '%' }}
               />
             </div>
@@ -1937,8 +2337,10 @@ function NewCasePageInner() {
             </div>
             
             <div className="flex gap-3 flex-wrap">
-              {/* Render to PDF — visible once draft is saved */}
-              {savedCaseData && (
+              {/* Render to PDF — disabled for v1. Bank-form PDF rendering is deferred
+                  to a professional developer (coordinate overlay is unreliable).
+                  Re-enable by restoring the button below once AcroForm approach ships. */}
+              {false && savedCaseData && (
                 <Button
                   variant="outline"
                   onClick={() => setShowPrintView(true)}

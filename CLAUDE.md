@@ -68,6 +68,15 @@ Agent creates a case (optionally from a calculation). Fills in the **bank-specif
 - Agent can **save as draft at any point** — only bank selection is required
 - All form data stored in `bank_form_data` JSONB column on `cases`
 
+> **⚠️ v1 minimum fields (2026-04-21):** Both `ocbc.ts` and `hlb.ts` have been trimmed to
+> the bare minimum needed for v1 tracking & commission: purpose (purchase / refinance /
+> refinance+cashout), main applicant contact (name, IC, phone, email), optional co-borrower,
+> existing-loan block (current financier free-text, outstanding, monthly, interest %, tenure),
+> new-loan block (purchase price, new loan amount, tenure, cash-out amount). Lawyer /
+> valuer / finance-cost toggles live in Stage 2. Full bank-field parity (employment, PEP,
+> consent, FATCA, collateral details, etc.) is deferred along with PDF rendering to a
+> professional dev.
+
 ---
 
 ### Stage 2 — Supporting Info: Valuer + Lawyer Quotation (NEW)
@@ -176,6 +185,13 @@ prints it, and the **client signs**.
 
 The rendered PDF overlays agent-entered data onto the bank's official form template stored
 in `/Forms/`. Field positions are calibrated per bank in `src/app/api/generate-pdf/route.ts`.
+
+> **⚠️ v1 status (2026-04-21):** Bank-form PDF rendering is **DISABLED** for first release.
+> The coordinate-overlay approach is unreliable and a professional dev will rebuild it using
+> AcroForm fillable PDFs. "Render to PDF" button in `/agent/cases/new` is hidden behind
+> `{false && ...}`. Agent workflow proceeds without PDF — client signs a printed hardcopy
+> the agent prepares manually. Calculation report PDF (`/agent/calculations/new` → Generate
+> PDF Report) is separate and still works — that's the pitch deck, not the bank form.
 
 ---
 
@@ -295,14 +311,14 @@ draft → submitted → approved / kiv / rejected
 
 ## Pending Work (priority order)
 
-1. **Fix: Calculation view/edit** — build `/agent/calculations/[id]/page.tsx` (view + edit); currently 404
-2. **Fix: Calculation form** — IC optional, add age field, 70yr tenure cap using min(borrower_age, co_borrower_age)
+1. ~~**Fix: Calculation view/edit** — build `/agent/calculations/[id]/page.tsx`~~ ✅ Done (view + edit with IC-autofill-DOB, age fallback)
+2. ~~**Fix: Calculation form** — IC optional, age field, 70yr tenure cap~~ ✅ Done (canProceed requires only name+loanType; age field populates DOB; `calcMaxTenureMonths` uses younger borrower's ceiling; `TenureInput.exceedsMax` enforces cap)
 3. **New: Lawyer table** — add `contact_email` column (for quotation emails) separate from `general_email`
-4. **New: Stage 2 UI** — valuer entry (2 valuers) + lawyer quotation request (3 templates: LA, SPA, MOT) with email send
+4. ~~**New: Stage 2 UI** — valuer entry (2 valuers) + lawyer quotation request (3 templates: LA, SPA, MOT) with email send + trim OCBC/HLB bank form configs to minimum fields~~ ✅ Done (Stage 2 UI live on case detail page; OCBC + HLB form configs trimmed to minimum — see v1 minimum fields note under Stage 1 above; PDF rendering deferred — see Stage 3 note)
 5. **New: Document upload** — Supabase Storage integration for Stages 4 and 6
-6. **New: Audit log** — `case_activity_log` table + UI component in case detail
-7. **New: Case status transitions** — enforce permission matrix above in both UI and API routes
-8. **New: Commission at accepted** — trigger commission calculation when status → accepted
+6. ~~**New: Audit log** — `case_activity_log` table + UI component in case detail~~ ✅ Done (already built — `case_status_history` + `case_comments` + `case_documents` tables, merged in `src/components/shared/activity-timeline.tsx`, rendered on case detail page)
+7. ~~**New: Case status transitions** — enforce permission matrix above in both UI and API routes~~ ✅ Done (PATCH `/api/cases/[id]` enforces: draft/kiv editable only by owning agent; approved→accepted requires Signed Letter of Offer; approved→rejected blocked for agent; admin bypasses all. Agent UI shows Edit/Resubmit only in draft/kiv.)
+8. ~~**New: Commission at accepted** — trigger commission calculation when status → accepted~~ ✅ Done (already wired in PATCH `/api/cases/[id]` lines 268-373 — calculates bank + panel lawyer commission, inserts rows with `status='calculated'`, notifies agent)
 9. **Fix: Dev server tailwind** — `tailwindcss` can't resolve from parent dir
 10. **Fix: Calculation form remaining** — Fix 6 (finance fees flow), Fix 7 (stamp duty row), Fix 8/10 (snowball scenarios)
 11. Add `agency_id` to all table types in `src/types/database.ts`

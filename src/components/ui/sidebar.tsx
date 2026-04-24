@@ -235,6 +235,8 @@ interface TopbarProps {
   userEmail?: string
   unreadNotifications?: number
   onLogout?: () => void
+  /** Route for the notifications bell icon. Defaults to /agent/notifications. */
+  notificationsHref?: string
 }
 
 export function Topbar({
@@ -244,6 +246,7 @@ export function Topbar({
   userEmail,
   unreadNotifications = 0,
   onLogout,
+  notificationsHref = '/agent/notifications',
 }: TopbarProps) {
   return (
     <header className="h-[4.5rem] bg-white/80 backdrop-blur-2xl sticky top-0 z-10 border-b border-border/40 flex items-center justify-between px-4 sm:px-8 flex-shrink-0">
@@ -267,14 +270,18 @@ export function Topbar({
 
       <div className="flex items-center gap-3">
         {/* Notifications */}
-        <button className="relative p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors">
+        <Link
+          href={notificationsHref}
+          className="relative p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors"
+          aria-label="Notifications"
+        >
           <Bell className="h-5 w-5" />
           {unreadNotifications > 0 && (
             <span className="absolute top-1 right-1 h-4 w-4 flex items-center justify-center bg-[#FF3B30] text-white text-[10px] font-bold rounded-full">
               {unreadNotifications > 9 ? "9+" : unreadNotifications}
             </span>
           )}
-        </button>
+        </Link>
 
         {/* Divider */}
         <div className="h-6 w-px bg-[#111113]/12" />

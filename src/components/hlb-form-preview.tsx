@@ -197,9 +197,9 @@ export function HLBFormPreview({ data: d, onClose }: HLBFormPreviewProps) {
         }
       `}</style>
 
-      <div className="hlb-print-root">
+      <div className="hlb-print-root fixed inset-0 z-[100] bg-white overflow-auto print:static print:overflow-visible">
         {/* ── Screen toolbar ──────────────────────────────────────────────── */}
-        <div className="no-print sticky top-0 z-10 bg-white border-b shadow-sm px-6 py-3 flex items-center justify-between">
+        <div className="no-print sticky top-0 z-[110] bg-white border-b shadow-sm px-6 py-3 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-[#0A1628]">HLB Application Form Preview</h2>
             <p className="text-xs text-gray-500 mt-0.5">Data overlaid on official bank form. Click Print to produce PDF.</p>
@@ -383,6 +383,12 @@ function PagesContent({
         {d.length_service_months && <F v={String(d.length_service_months)} x={415} y={528} />}
         <F v={fmtMoney(d.monthly_income)}                           x={175} y={492} bold />
         <F v={fmtDate(d.company_establishment_date)}               x={285} y={462} />
+
+        {/* Previous employment (if provided) — placed below main employment block */}
+        <F v={d.prev_employer_name}       x={175} y={420} size={8} maxW={275} />
+        <F v={d.prev_nature_of_business}  x={175} y={392} size={8} maxW={275} />
+        <F v={d.prev_occupation}          x={175} y={364} size={8} maxW={275} />
+        {d.prev_length_service && <F v={String(d.prev_length_service)} x={175} y={336} size={8} />}
       </FormPage>
 
       {/* ════════════ PAGES 5–7 — Secondary, Declaration, Bank use ════════════ */}

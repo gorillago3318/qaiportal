@@ -5,13 +5,14 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   ArrowLeft, User, Building2, MapPin, Landmark, Clock, MessageSquare, CheckCircle2, Send,
-  FileText, Loader2,
+  FileText, Loader2, Pencil,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { formatCurrency, formatDate, formatDateTime, monthsToYearsMonths } from "@/lib/utils"
 import { CASE_STATUS_LABELS, LOAN_TYPE_LABELS, type CaseStatus } from "@/types/database"
+import { createBrowserClient } from '@supabase/ssr'
 
 const STATUS_COLORS: Record<CaseStatus, string> = {
   draft: "bg-gray-100 text-gray-600",
@@ -69,7 +70,6 @@ type CaseDetail = {
   created_at: string
   client: { full_name: string; ic_number: string; phone: string; email: string | null; monthly_income: number | null } | null
   agent: { full_name: string; agent_code: string | null; email: string; phone: string | null } | null
-  proposed_bank: { name: string } | null
   status_history: {
     id: string; from_status: string | null; to_status: string; notes: string | null; created_at: string
     changed_by_profile: { full_name: string; role: string } | null
@@ -83,6 +83,13 @@ type CaseDetail = {
   lawyer_discount_amount: number | null
   lawyer_name_other: string | null
   lawyer_firm_other: string | null
+  lawyer_professional_fee: number | null
+  proposed_bank_id: string | null
+  /** Top-level JSONB with every agent-entered form field */
+  bank_form_data: Record<string, unknown> | null
+  /** Joined from lawyers table via lawyer_id FK */
+  lawyer: { id: string; name: string; firm: string; is_panel: boolean } | null
+  proposed_bank: { name: string; commission_rate: number } | null
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -110,9 +117,12 @@ export default function AdminCaseDetailPage() {
   const [commissionGross, setCommissionGross] = React.useState("0")
   const [commissionDiscount, setCommissionDiscount] = React.useState("0")
   const [commissionNotes, setCommissionNotes] = React.useState("")
-  const [calculatingComms, setCalculatingComms] = React.useState(false)
+  const [calculatingComms, setCalculatingComms] = React.useState<'bank' | 'lawyer' | null>(null)
   const [commissionPreview, setCommissionPreview] = React.useState<Record<string,{name:string;role:string;percentage:number;amount:number}> | null>(null)
   const [loadingCommPreview, setLoadingCommPreview] = React.useState(false)
+  /** Current status per commission type. */
+  const [bankCommStatus, setBankCommStatus] = React.useState<string | null>(null)
+  const [lawyerCommStatus, setLawyerCommStatus] = React.useState<string | null>(null)
   const [isPanelLawyer, setIsPanelLawyer] = React.useState(false)
   const [lawyerGross, setLawyerGross] = React.useState("0")
   
@@ -121,7 +131,24 @@ export default function AdminCaseDetailPage() {
     valuer_2_firm: "", valuer_2_name: "", valuer_2_date: "", valuer_2_amount: "" as string | number,
   })
   const [savingValuation, setSavingValuation] = React.useState(false)
+  const [savingFee, setSavingFee] = React.useState(false)
   const [sendingToLawyer, setSendingToLawyer] = React.useState(false)
+  const [editingCase, setEditingCase] = React.useState(false)
+  const [caseEditForm, setCaseEditForm] = React.useState({
+    client_name: '', client_ic: '', client_phone: '', client_email: '',
+    coborrower_name: '', coborrower_ic: '', coborrower_phone: '',
+    proposed_bank_id: '',
+    home_loan_amount: '', home_loan_tenure: '',
+    finance_legal_cost: false, legal_cost_amount: '',
+    finance_valuation_cost: false, valuation_cost_amount: '',
+    cashout_amount: '',
+    selected_lawyer_type: '' as 'panel' | 'others' | '',
+    lawyer_id: '', lawyer_name_other: '', lawyer_firm_other: '',
+    lawyer_professional_fee: '', special_arrangement_discount: '',
+  })
+  const [savingCase, setSavingCase] = React.useState(false)
+  const [availableLawyers, setAvailableLawyers] = React.useState<{ id: string; name: string; firm: string }[]>([])
+  const [availableBanks, setAvailableBanks] = React.useState<{ id: string; name: string; commission_rate: number }[]>([])
   const [laPreparationSent, setLaPreparationSent] = React.useState<string | null>(null)
 
   const fetchCase = React.useCallback(async () => {
@@ -147,27 +174,35 @@ export default function AdminCaseDetailPage() {
         valuer_2_date: json.data.valuer_2_date || "",
         valuer_2_amount: json.data.valuer_2_amount || "",
       })
+      // Pre-fill professional fee — top-level column is authoritative, bfd is fallback
+      const fee = json.data.lawyer_professional_fee ?? bfd?.lawyer_professional_fee
+      if (fee) setLawyerGross(String(fee))
+
+      // Panel detection — use joined lawyer object (both old and new cases after GET fallback)
+      // Secondary fallback: bank_form_data.selected_lawyer_type for cases where lawyer fetch fails
+      const isPanel =
+        json.data.lawyer?.is_panel === true ||
+        (bfd?.selected_lawyer_type === 'panel' && !!bfd?.lawyer_id)
+      setIsPanelLawyer(isPanel)
+
       // Auto-preview commission if case is accepted or beyond
       const commissionStatuses: CaseStatus[] = ['accepted', 'pending_execution', 'executed', 'payment_pending', 'paid']
       if (commissionStatuses.includes(json.data.status)) {
-        // Check if panel lawyer
-        const panelLawyer = !json.data.lawyer_name_other
-        setIsPanelLawyer(panelLawyer)
-        // Pre-fill professional fee from case data
-        if (json.data.professional_fee) {
-          setLawyerGross(String(json.data.professional_fee))
-        }
-        // Auto-load preview (GET endpoint — auto-computes from loan amount × bank rate)
+        // Sync bank gross display from auto-calc
+        const loan = parseFloat(String(json.data.proposed_loan_amount || 0)) || 0
+        const rate = json.data.proposed_bank?.commission_rate ?? 0
+        setCommissionGross((loan * rate).toFixed(2))
+        // Fetch existing commission rows (status + tier breakdown)
         setLoadingCommPreview(true)
         try {
-          const prevRes = await fetch(`/api/cases/${id}/commission/preview`)
+          const [prevRes, commRes] = await Promise.all([
+            fetch(`/api/cases/${id}/commission/preview`),
+            fetch(`/api/commissions?case_id=${id}`),
+          ])
           if (prevRes.ok) {
             const prevJson = await prevRes.json()
-            // New response: { bank: { gross, net_distributable, rows: [...] }, lawyer: { ... } }
             if (prevJson.bank) {
-              // Use bank gross from preview
               setCommissionGross(prevJson.bank.gross?.toFixed(2) ?? "0")
-              // Build commissionPreview map from rows array
               if (prevJson.bank.rows) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const map: Record<string, {name:string;role:string;percentage:number;amount:number}> = {}
@@ -176,6 +211,15 @@ export default function AdminCaseDetailPage() {
                 setCommissionPreview(map)
               }
             }
+          }
+          if (commRes.ok) {
+            const commJson = await commRes.json()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const rows: any[] = commJson.data || []
+            const bankRow = rows.find((r) => r.type === 'bank')
+            const lawyerRow = rows.find((r) => r.type === 'lawyer')
+            setBankCommStatus(bankRow?.status ?? null)
+            setLawyerCommStatus(lawyerRow?.status ?? null)
           }
         } catch {/* silent */} finally { setLoadingCommPreview(false) }
       }
@@ -187,6 +231,18 @@ export default function AdminCaseDetailPage() {
   }, [id, router])
 
   React.useEffect(() => { fetchCase() }, [fetchCase])
+
+  // Fetch dropdown data for the edit form
+  React.useEffect(() => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    supabase.from('lawyers').select('id, name, firm').eq('is_panel', true).order('name')
+      .then(({ data }) => { if (data) setAvailableLawyers(data) })
+    supabase.from('banks').select('id, name, commission_rate').order('name')
+      .then(({ data }) => { if (data) setAvailableBanks(data) })
+  }, [])
 
   const handleSendToLawyer = async () => {
     setSendingToLawyer(true)
@@ -237,6 +293,126 @@ export default function AdminCaseDetailPage() {
     setSavingRemarks(false)
   }
 
+  const handleSaveFee = async () => {
+    if (!caseData) return
+    setSavingFee(true)
+    const fee = parseFloat(lawyerGross) || 0
+    const acceptedStatuses: CaseStatus[] = ['accepted', 'pending_execution', 'executed', 'payment_pending', 'paid']
+    const shouldRecalc = acceptedStatuses.includes(caseData.status)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: Record<string, any> = {
+      // Update JSONB field (for legacy reads) AND top-level column (for joins/commission calc)
+      bank_form_data: { ...(caseData.bank_form_data || {}), lawyer_professional_fee: fee },
+      lawyer_professional_fee: fee,
+    }
+    if (shouldRecalc) body.recalculate_commission = true
+
+    const res = await fetch(`/api/cases/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) toast.success(shouldRecalc ? "Fee saved — commission recalculated" : "Professional fee saved")
+    else { const j = await res.json(); toast.error(j.error || "Failed to save") }
+    setSavingFee(false)
+    fetchCase()
+  }
+
+  const openEdit = () => {
+    if (!caseData) return
+    const bfd = caseData.bank_form_data || {}
+    const lawyerType = (bfd.selected_lawyer_type as string) ||
+      (caseData.lawyer ? 'panel' : caseData.lawyer_name_other ? 'others' : '')
+    setCaseEditForm({
+      client_name: String(bfd.client_name ?? ''),
+      client_ic: String(bfd.client_ic ?? ''),
+      client_phone: String(bfd.client_phone ?? ''),
+      client_email: String(bfd.client_email ?? ''),
+      coborrower_name: String(bfd.coborrower_name ?? ''),
+      coborrower_ic: String(bfd.coborrower_ic ?? ''),
+      coborrower_phone: String(bfd.coborrower_phone ?? ''),
+      proposed_bank_id: String(caseData.proposed_bank_id ?? bfd.proposed_bank_id ?? ''),
+      home_loan_amount: String(bfd.home_loan_amount ?? ''),
+      home_loan_tenure: String(bfd.home_loan_tenure ?? ''),
+      finance_legal_cost: Boolean(bfd.finance_legal_cost),
+      legal_cost_amount: String(bfd.legal_cost_amount ?? ''),
+      finance_valuation_cost: Boolean(bfd.finance_valuation_cost),
+      valuation_cost_amount: String(bfd.valuation_cost_amount ?? ''),
+      cashout_amount: String(bfd.cashout_amount ?? ''),
+      selected_lawyer_type: lawyerType as 'panel' | 'others' | '',
+      lawyer_id: String(caseData.lawyer?.id ?? bfd.lawyer_id ?? ''),
+      lawyer_name_other: String(caseData.lawyer_name_other ?? bfd.lawyer_name_other ?? ''),
+      lawyer_firm_other: String(caseData.lawyer_firm_other ?? bfd.lawyer_firm_other ?? ''),
+      lawyer_professional_fee: String(caseData.lawyer_professional_fee ?? bfd.lawyer_professional_fee ?? ''),
+      special_arrangement_discount: String(bfd.special_arrangement_discount ?? ''),
+    })
+    setEditingCase(true)
+  }
+
+  const handleSaveCase = async () => {
+    if (!caseData) return
+    setSavingCase(true)
+    const acceptedStatuses: CaseStatus[] = ['accepted', 'pending_execution', 'executed', 'payment_pending', 'paid']
+    const shouldRecalc = acceptedStatuses.includes(caseData.status)
+
+    const base = parseFloat(caseEditForm.home_loan_amount) || 0
+    const legal = caseEditForm.finance_legal_cost ? (parseFloat(caseEditForm.legal_cost_amount) || 0) : 0
+    const valuation = caseEditForm.finance_valuation_cost ? (parseFloat(caseEditForm.valuation_cost_amount) || 0) : 0
+    const cashout = parseFloat(caseEditForm.cashout_amount) || 0
+    const proposedLoanAmount = Math.round((base + legal + valuation + cashout) * 100) / 100
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: Record<string, any> = {
+      proposed_bank_id: caseEditForm.proposed_bank_id || null,
+      proposed_loan_amount: proposedLoanAmount || null,
+      lawyer_id: caseEditForm.selected_lawyer_type === 'panel' ? (caseEditForm.lawyer_id || null) : null,
+      lawyer_name_other: caseEditForm.selected_lawyer_type === 'others' ? (caseEditForm.lawyer_name_other || null) : null,
+      lawyer_firm_other: caseEditForm.selected_lawyer_type === 'others' ? (caseEditForm.lawyer_firm_other || null) : null,
+      lawyer_professional_fee: caseEditForm.lawyer_professional_fee ? parseFloat(caseEditForm.lawyer_professional_fee) : null,
+      bank_form_data: {
+        ...(caseData.bank_form_data || {}),
+        client_name: caseEditForm.client_name,
+        client_ic: caseEditForm.client_ic,
+        client_phone: caseEditForm.client_phone,
+        client_email: caseEditForm.client_email,
+        coborrower_name: caseEditForm.coborrower_name || null,
+        coborrower_ic: caseEditForm.coborrower_ic || null,
+        coborrower_phone: caseEditForm.coborrower_phone || null,
+        proposed_bank_id: caseEditForm.proposed_bank_id || null,
+        home_loan_amount: caseEditForm.home_loan_amount,
+        home_loan_tenure: caseEditForm.home_loan_tenure,
+        finance_legal_cost: caseEditForm.finance_legal_cost,
+        legal_cost_amount: caseEditForm.legal_cost_amount,
+        finance_valuation_cost: caseEditForm.finance_valuation_cost,
+        valuation_cost_amount: caseEditForm.valuation_cost_amount,
+        cashout_amount: caseEditForm.cashout_amount,
+        selected_lawyer_type: caseEditForm.selected_lawyer_type,
+        lawyer_id: caseEditForm.selected_lawyer_type === 'panel' ? (caseEditForm.lawyer_id || null) : null,
+        lawyer_name_other: caseEditForm.selected_lawyer_type === 'others' ? (caseEditForm.lawyer_name_other || null) : null,
+        lawyer_firm_other: caseEditForm.selected_lawyer_type === 'others' ? (caseEditForm.lawyer_firm_other || null) : null,
+        lawyer_professional_fee: caseEditForm.lawyer_professional_fee ? parseFloat(caseEditForm.lawyer_professional_fee) : null,
+        special_arrangement_discount: caseEditForm.special_arrangement_discount ? parseFloat(caseEditForm.special_arrangement_discount) : null,
+      },
+    }
+    if (shouldRecalc) body.recalculate_commission = true
+
+    const res = await fetch(`/api/cases/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) {
+      toast.success(shouldRecalc ? 'Case updated — commission recalculated' : 'Case details saved')
+      setEditingCase(false)
+      fetchCase()
+    } else {
+      const j = await res.json()
+      toast.error(j.error || 'Failed to save')
+    }
+    setSavingCase(false)
+  }
+
   const handleSaveValuation = async () => {
     setSavingValuation(true)
     const res = await fetch(`/api/cases/${id}`, {
@@ -260,35 +436,26 @@ export default function AdminCaseDetailPage() {
     setSavingValuation(false)
   }
 
-  const handleGenerateCommission = async () => {
-    if (!caseData?.agent?.agent_code) return
-    setCalculatingComms(true)
+  const handleAdvanceCommission = async (type: 'bank' | 'lawyer') => {
+    setCalculatingComms(type)
     try {
-      const payload = {
-        bank_gross: parseFloat(commissionGross) || 0,
-        bank_discount: parseFloat(commissionDiscount) || 0,
-        professional_fee: !caseData.lawyer_name_other && parseFloat(lawyerGross) > 0
-          ? parseFloat(lawyerGross)
-          : undefined,
-        notes: commissionNotes,
-      }
-
       const res = await fetch(`/api/cases/${id}/commission`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ type, notes: commissionNotes }),
       })
+      const j = await res.json()
       if (res.ok) {
-        toast.success("Commission finalized and paid!")
+        const label = type === 'bank' ? 'Bank' : 'Lawyer'
+        toast.success(`${label} commission → ${j.advanced_to?.replace(/_/g, ' ')}`)
         fetchCase()
       } else {
-        const j = await res.json()
-        toast.error(j.error || "Failed to finalize commission")
+        toast.error(j.error || "Failed to advance commission")
       }
     } catch {
       toast.error("An error occurred")
     }
-    setCalculatingComms(false)
+    setCalculatingComms(null)
   }
 
   const handleSendComment = async () => {
@@ -409,6 +576,282 @@ export default function AdminCaseDetailPage() {
             </CardContent>
           </Card>
 
+          {/* ── Application Details (editable by admin) ── */}
+          {(() => {
+            const bfd = caseData.bank_form_data || {}
+            const inp = (label: string, field: keyof typeof caseEditForm, type = 'text') => (
+              <div key={field}>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                <input
+                  type={type}
+                  value={String(caseEditForm[field])}
+                  onChange={e => setCaseEditForm(f => ({ ...f, [field]: e.target.value }))}
+                  className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                />
+              </div>
+            )
+            return (
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Application Details</CardTitle>
+                    {!editingCase ? (
+                      <Button size="sm" variant="outline" onClick={openEdit} className="gap-1.5">
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setEditingCase(false)}>Cancel</Button>
+                        <Button size="sm" onClick={handleSaveCase} disabled={savingCase} className="bg-[#0A1628] text-white hover:bg-[#0d1f38]">
+                          {savingCase ? 'Saving…' : 'Save Changes'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+
+                  {/* ── BORROWER ── */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Main Borrower</p>
+                    {editingCase ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        {inp('Full Name', 'client_name')}
+                        {inp('IC / Passport No.', 'client_ic')}
+                        {inp('Phone', 'client_phone')}
+                        {inp('Email', 'client_email')}
+                      </div>
+                    ) : (
+                      <div>
+                        {bfd.client_name && <InfoRow label="Full Name" value={String(bfd.client_name)} />}
+                        {bfd.client_ic && <InfoRow label="IC / Passport" value={String(bfd.client_ic)} />}
+                        {bfd.client_phone && <InfoRow label="Phone" value={String(bfd.client_phone)} />}
+                        {bfd.client_email && <InfoRow label="Email" value={String(bfd.client_email)} />}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── CO-BORROWER ── */}
+                  {(bfd.coborrower_name || editingCase) && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Co-Borrower</p>
+                      {editingCase ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          {inp('Full Name', 'coborrower_name')}
+                          {inp('IC / Passport No.', 'coborrower_ic')}
+                          {inp('Phone', 'coborrower_phone')}
+                        </div>
+                      ) : (
+                        <div>
+                          {bfd.coborrower_name && <InfoRow label="Full Name" value={String(bfd.coborrower_name)} />}
+                          {bfd.coborrower_ic && <InfoRow label="IC / Passport" value={String(bfd.coborrower_ic)} />}
+                          {bfd.coborrower_phone && <InfoRow label="Phone" value={String(bfd.coborrower_phone)} />}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── NEW LOAN ── */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">New Loan</p>
+                    {editingCase ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Proposed Bank</label>
+                          <select
+                            value={caseEditForm.proposed_bank_id}
+                            onChange={e => setCaseEditForm(f => ({ ...f, proposed_bank_id: e.target.value }))}
+                            className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                          >
+                            <option value="">— Select bank —</option>
+                            {availableBanks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {inp('Loan Amount (RM)', 'home_loan_amount', 'number')}
+                          {inp('Tenure (years)', 'home_loan_tenure', 'number')}
+                          {inp('Cash Out (RM)', 'cashout_amount', 'number')}
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" checked={caseEditForm.finance_legal_cost}
+                              onChange={e => setCaseEditForm(f => ({ ...f, finance_legal_cost: e.target.checked }))}
+                              className="rounded" />
+                            Finance Legal Fees
+                          </label>
+                          {caseEditForm.finance_legal_cost && inp('Legal Cost (RM)', 'legal_cost_amount', 'number')}
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" checked={caseEditForm.finance_valuation_cost}
+                              onChange={e => setCaseEditForm(f => ({ ...f, finance_valuation_cost: e.target.checked }))}
+                              className="rounded" />
+                            Finance Valuation Fees
+                          </label>
+                          {caseEditForm.finance_valuation_cost && inp('Valuation Cost (RM)', 'valuation_cost_amount', 'number')}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <InfoRow label="Bank" value={caseData.proposed_bank?.name || (availableBanks.find(b => b.id === String(bfd.proposed_bank_id ?? ''))?.name) || null} />
+                        {bfd.home_loan_amount && <InfoRow label="Loan Amount" value={formatCurrency(parseFloat(String(bfd.home_loan_amount)))} />}
+                        {bfd.home_loan_tenure && <InfoRow label="Tenure" value={`${bfd.home_loan_tenure} years`} />}
+                        {bfd.cashout_amount && parseFloat(String(bfd.cashout_amount)) > 0 && (
+                          <InfoRow label="Cash Out" value={formatCurrency(parseFloat(String(bfd.cashout_amount)))} />
+                        )}
+                        {bfd.finance_legal_cost && (
+                          <InfoRow label="Finance Legal Fees" value={`Yes${bfd.legal_cost_amount ? ` — ${formatCurrency(parseFloat(String(bfd.legal_cost_amount)))}` : ''}`} />
+                        )}
+                        {bfd.finance_valuation_cost && (
+                          <InfoRow label="Finance Valuation Fees" value={`Yes${bfd.valuation_cost_amount ? ` — ${formatCurrency(parseFloat(String(bfd.valuation_cost_amount)))}` : ''}`} />
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── LAWYER ── */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Lawyer</p>
+                    {editingCase ? (
+                      <div className="space-y-3">
+                        <div className="flex gap-4">
+                          {(['panel', 'others'] as const).map(t => (
+                            <label key={t} className="flex items-center gap-2 text-sm cursor-pointer">
+                              <input type="radio" name="lawyer_type" value={t}
+                                checked={caseEditForm.selected_lawyer_type === t}
+                                onChange={() => setCaseEditForm(f => ({ ...f, selected_lawyer_type: t }))}
+                              />
+                              {t === 'panel' ? 'Panel Lawyer' : 'External / Others'}
+                            </label>
+                          ))}
+                        </div>
+                        {caseEditForm.selected_lawyer_type === 'panel' && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Select Panel Lawyer</label>
+                            <select
+                              value={caseEditForm.lawyer_id}
+                              onChange={e => setCaseEditForm(f => ({ ...f, lawyer_id: e.target.value }))}
+                              className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                            >
+                              <option value="">— Select lawyer —</option>
+                              {availableLawyers.map(l => (
+                                <option key={l.id} value={l.id}>{l.name} — {l.firm}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        {caseEditForm.selected_lawyer_type === 'others' && (
+                          <div className="grid grid-cols-2 gap-3">
+                            {inp('Lawyer Name', 'lawyer_name_other')}
+                            {inp('Firm / Company', 'lawyer_firm_other')}
+                          </div>
+                        )}
+                        {caseEditForm.selected_lawyer_type && (
+                          <div className="grid grid-cols-2 gap-3">
+                            {inp('Professional Fee (RM)', 'lawyer_professional_fee', 'number')}
+                            {inp('Special Discount (RM)', 'special_arrangement_discount', 'number')}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        {caseData.lawyer ? (
+                          <>
+                            <InfoRow label="Type" value={<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700">Panel</span>} />
+                            <InfoRow label="Name" value={caseData.lawyer.name} />
+                            <InfoRow label="Firm" value={caseData.lawyer.firm} />
+                          </>
+                        ) : caseData.lawyer_name_other ? (
+                          <>
+                            <InfoRow label="Type" value={<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-600">External</span>} />
+                            <InfoRow label="Name" value={caseData.lawyer_name_other} />
+                            {caseData.lawyer_firm_other && <InfoRow label="Firm" value={caseData.lawyer_firm_other} />}
+                          </>
+                        ) : bfd.selected_lawyer_type ? (
+                          <p className="text-sm text-gray-400">Lawyer info incomplete — click Edit to update</p>
+                        ) : (
+                          <p className="text-sm text-gray-400">No lawyer selected</p>
+                        )}
+                        {(caseData.lawyer_professional_fee || bfd.lawyer_professional_fee) ? (
+                          <InfoRow label="Professional Fee" value={formatCurrency(Number(caseData.lawyer_professional_fee ?? bfd.lawyer_professional_fee))} />
+                        ) : null}
+                        {bfd.special_arrangement_discount && Number(bfd.special_arrangement_discount) > 0 ? (
+                          <InfoRow label="Agent Discount" value={<span className="text-amber-600">– {formatCurrency(Number(bfd.special_arrangement_discount))}</span>} />
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                </CardContent>
+              </Card>
+            )
+          })()}
+
+          {/* ── Loan Breakdown ── */}
+          {caseData.bank_form_data && (() => {
+            const bfd = caseData.bank_form_data
+            const base    = parseFloat(String(bfd.home_loan_amount || 0)) || 0
+            const legal   = bfd.finance_legal_cost   ? parseFloat(String(bfd.legal_cost_amount || 0))    || 0 : 0
+            const valuer  = bfd.finance_valuation_cost? parseFloat(String(bfd.valuation_cost_amount || 0)) || 0 : 0
+            const cashout = parseFloat(String(bfd.cashout_amount || 0)) || 0
+            const total   = parseFloat(String(caseData.proposed_loan_amount || base + legal + valuer + cashout)) || 0
+            return (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Building2 className="h-4 w-4 text-[#C9A84C]" /> Loan Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <InfoRow label="Base Loan" value={formatCurrency(base)} />
+                  {legal > 0 && <InfoRow label="Legal Fees (financed)" value={formatCurrency(legal)} />}
+                  {valuer > 0 && <InfoRow label="Valuation Fees (financed)" value={formatCurrency(valuer)} />}
+                  {cashout > 0 && <InfoRow label="Cash Out" value={formatCurrency(cashout)} />}
+                  <div className="flex items-start justify-between py-2.5 border-t border-gray-200 mt-1">
+                    <span className="text-sm font-semibold text-[#0A1628] min-w-[140px]">Total Financing</span>
+                    <span className="text-sm font-bold text-[#0A1628]">{formatCurrency(total)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })()}
+
+          {/* ── Lawyer & Fees ── */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-[#C9A84C]" /> Lawyer &amp; Fees
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {caseData.lawyer ? (
+                <>
+                  <InfoRow label="Lawyer" value={caseData.lawyer.name} />
+                  <InfoRow label="Firm" value={caseData.lawyer.firm} />
+                  <InfoRow label="Type" value={<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700">Panel</span>} />
+                </>
+              ) : caseData.lawyer_name_other ? (
+                <>
+                  <InfoRow label="Lawyer" value={caseData.lawyer_name_other} />
+                  <InfoRow label="Firm" value={caseData.lawyer_firm_other} />
+                  <InfoRow label="Type" value={<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-600">External</span>} />
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">No lawyer selected</p>
+              )}
+              {(caseData.lawyer_professional_fee ?? (caseData.bank_form_data?.lawyer_professional_fee as number | undefined)) ? (
+                <InfoRow
+                  label="Professional Fee"
+                  value={formatCurrency(caseData.lawyer_professional_fee ?? (caseData.bank_form_data?.lawyer_professional_fee as number))}
+                />
+              ) : null}
+              {caseData.bank_form_data?.special_arrangement_discount ? (
+                <InfoRow
+                  label="Agent Discount"
+                  value={<span className="text-amber-600">– {formatCurrency(caseData.bank_form_data.special_arrangement_discount as number)}</span>}
+                />
+              ) : null}
+            </CardContent>
+          </Card>
+
           {/* Valuation Details Card */}
           <Card>
             <CardHeader className="pb-3">
@@ -480,7 +923,7 @@ export default function AdminCaseDetailPage() {
             </Card>
           )}
 
-          {(['accepted','pending_execution','executed','payment_pending'] as CaseStatus[]).includes(caseData.status) && (
+          {(['submitted','approved','accepted','pending_execution','executed','payment_pending'] as CaseStatus[]).includes(caseData.status) && (
             <Card className="border-[#C9A84C]/40 bg-gradient-to-br from-amber-50/50 to-white">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base text-[#0A1628] flex items-center gap-2">
@@ -490,10 +933,12 @@ export default function AdminCaseDetailPage() {
                   {caseData.has_lawyer_discount && (
                     <p className="text-xs text-amber-600">⚠ Lawyer discount: RM {caseData.lawyer_discount_amount?.toFixed(2)}</p>
                   )}
-                  {caseData.lawyer_name_other ? (
+                  {isPanelLawyer ? (
+                    <p className="text-xs text-emerald-600">✓ Panel Lawyer ({caseData.lawyer?.name || '—'}) — Bank &amp; Lawyer commissions apply</p>
+                  ) : caseData.lawyer_name_other ? (
                     <p className="text-xs text-gray-500">External Lawyer: {caseData.lawyer_name_other} — no lawyer commission</p>
                   ) : (
-                    <p className="text-xs text-emerald-600">✓ Panel Lawyer — both Bank & Lawyer commissions apply</p>
+                    <p className="text-xs text-gray-400">No lawyer selected</p>
                   )}
                 </div>
               </CardHeader>
@@ -507,8 +952,14 @@ export default function AdminCaseDetailPage() {
                       <label className="block text-xs font-medium text-gray-600 mb-1">
                         Bank Gross (RM) <span className="text-gray-400 font-normal">— loan × rate</span>
                       </label>
-                      <input type="number" value={commissionGross} onChange={e => setCommissionGross(e.target.value)}
-                        className="w-full h-9 px-3 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]" />
+                      {/* Auto-calculated — read-only. Loan amount × bank commission rate. */}
+                      <div className="w-full h-9 px-3 rounded-md border border-gray-100 bg-gray-50 text-sm flex items-center font-mono text-[#0A1628]">
+                        {(() => {
+                          const loan = parseFloat(String(caseData.proposed_loan_amount || 0)) || 0
+                          const rate = caseData.proposed_bank?.commission_rate ?? 0
+                          return (loan * rate).toFixed(2)
+                        })()}
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Admin Adjustment (RM)</label>
@@ -519,41 +970,44 @@ export default function AdminCaseDetailPage() {
                   {/* Auto-deduction summary */}
                   <div className="bg-gray-50 rounded-lg px-3 py-2 text-xs text-gray-600 space-y-0.5">
                     <div className="flex justify-between"><span>Bank Gross</span><span className="font-medium">RM {(parseFloat(commissionGross)||0).toFixed(2)}</span></div>
-                    <div className="flex justify-between text-red-500"><span>— RM50 flat fee (always)</span><span>– RM 50.00</span></div>
-                    {!caseData.lawyer_name_other && (
-                      <div className="flex justify-between text-red-500"><span>— RM200 loan agreement (panel lawyer)</span><span>– RM 200.00</span></div>
-                    )}
+                    <div className="flex justify-between text-red-500"><span>— RM50 admin fee</span><span>– RM 50.00</span></div>
                     {parseFloat(commissionDiscount) > 0 && (
                       <div className="flex justify-between text-red-500"><span>— Admin adjustment</span><span>– RM {(parseFloat(commissionDiscount)||0).toFixed(2)}</span></div>
                     )}
                     <div className="flex justify-between font-semibold text-[#0A1628] border-t pt-1 mt-1">
-                      <span>Net Distributable (Bank)</span>
-                      <span>RM {Math.max(0, (parseFloat(commissionGross)||0) - 50 - (!caseData.lawyer_name_other ? 200 : 0) - (parseFloat(commissionDiscount)||0)).toFixed(2)}</span>
+                      <span>Agent receives (100%)</span>
+                      <span>RM {Math.max(0, (parseFloat(commissionGross)||0) - 50 - (parseFloat(commissionDiscount)||0)).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* ── LAWYER COMMISSION ── */}
-                {!caseData.lawyer_name_other && (
+                {isPanelLawyer && (
                   <div className="space-y-3">
                     <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide border-b pb-1">Lawyer Commission</p>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">
                         Professional Fees (RM) <span className="text-gray-400 font-normal">— from lawyer quotation</span>
                       </label>
-                      <input type="number" value={lawyerGross} onChange={e => setLawyerGross(e.target.value)}
-                        className="w-full h-9 px-3 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
-                        placeholder="e.g. 6250.00"
-                      />
+                      <div className="flex gap-2">
+                        <input type="number" value={lawyerGross} onChange={e => setLawyerGross(e.target.value)}
+                          className="flex-1 h-9 px-3 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                          placeholder="e.g. 6250.00"
+                        />
+                        <Button onClick={handleSaveFee} disabled={savingFee} variant="outline" size="sm" className="whitespace-nowrap">
+                          {savingFee ? "Saving…" : "Save Fee"}
+                        </Button>
+                      </div>
                     </div>
                     {parseFloat(lawyerGross) > 0 && (
                       <div className="bg-gray-50 rounded-lg px-3 py-2 text-xs text-gray-600 space-y-0.5">
                         <div className="flex justify-between"><span>Professional Fee</span><span className="font-medium">RM {(parseFloat(lawyerGross)||0).toFixed(2)}</span></div>
                         <div className="flex justify-between text-amber-700"><span>QAI share (70%)</span><span>RM {((parseFloat(lawyerGross)||0)*0.7).toFixed(2)}</span></div>
-                        <div className="flex justify-between text-red-500"><span>— Company override (10%)</span><span>– RM {((parseFloat(lawyerGross)||0)*0.7*0.10).toFixed(2)}</span></div>
+                        <div className="flex justify-between text-red-500"><span>— Company cut (10%)</span><span>– RM {((parseFloat(lawyerGross)||0)*0.7*0.10).toFixed(2)}</span></div>
+                        <div className="flex justify-between text-red-500"><span>— Panel admin fee</span><span>– RM 200.00</span></div>
                         <div className="flex justify-between font-semibold text-[#0A1628] border-t pt-1 mt-1">
                           <span>Net Distributable (Lawyer)</span>
-                          <span>RM {Math.max(0, (parseFloat(lawyerGross)||0)*0.7*0.9).toFixed(2)}</span>
+                          <span>RM {Math.max(0, (parseFloat(lawyerGross)||0)*0.7*0.9 - 200).toFixed(2)}</span>
                         </div>
                       </div>
                     )}
@@ -589,10 +1043,61 @@ export default function AdminCaseDetailPage() {
                   <textarea rows={2} value={commissionNotes} onChange={e => setCommissionNotes(e.target.value)}
                     className="w-full text-xs p-2 rounded-md border border-gray-200 focus:outline-none focus:ring-1 focus:ring-[#C9A84C] resize-none" />
                 </div>
-                <Button onClick={handleGenerateCommission} disabled={calculatingComms}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" size="sm">
-                  {calculatingComms ? "Processing…" : "Finalize & Mark Paid"}
-                </Button>
+
+                {/* ── Per-type advance buttons ── */}
+                {(() => {
+                  const btnLabel = (status: string | null) =>
+                    status === 'calculated' ? 'Mark Payment Pending'
+                    : status === 'payment_pending' ? 'Mark as Paid'
+                    : status === 'paid' ? '✓ Paid'
+                    : 'Not Calculated'
+                  const btnClass = (status: string | null) =>
+                    status === 'paid'
+                      ? 'flex-1 py-2 text-center text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200'
+                      : status === 'payment_pending'
+                        ? 'flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold'
+                        : status === 'calculated'
+                          ? 'flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold'
+                          : 'flex-1 opacity-50 cursor-not-allowed'
+                  return (
+                    <div className="space-y-2">
+                      {/* Bank commission row */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 w-12 shrink-0">Bank</span>
+                        {bankCommStatus === 'paid' ? (
+                          <div className={btnClass('paid')}>✓ Bank Commission Paid</div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            onClick={() => handleAdvanceCommission('bank')}
+                            disabled={calculatingComms !== null || !bankCommStatus || bankCommStatus === 'pending'}
+                            className={btnClass(bankCommStatus)}
+                          >
+                            {calculatingComms === 'bank' ? 'Processing…' : btnLabel(bankCommStatus)}
+                          </Button>
+                        )}
+                      </div>
+                      {/* Lawyer commission row (only if panel) */}
+                      {isPanelLawyer && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-500 w-12 shrink-0">Lawyer</span>
+                          {lawyerCommStatus === 'paid' ? (
+                            <div className={btnClass('paid')}>✓ Lawyer Commission Paid</div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() => handleAdvanceCommission('lawyer')}
+                              disabled={calculatingComms !== null || !lawyerCommStatus || lawyerCommStatus === 'pending'}
+                              className={btnClass(lawyerCommStatus)}
+                            >
+                              {calculatingComms === 'lawyer' ? 'Processing…' : btnLabel(lawyerCommStatus)}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </CardContent>
             </Card>
           )}

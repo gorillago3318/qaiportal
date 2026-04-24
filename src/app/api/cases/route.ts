@@ -195,7 +195,8 @@ export async function POST(request: NextRequest) {
       proposed_interest_rate,
       interest_rate,  // From dynamic form
       proposed_tenure_months,
-      facility_tenure_months,  // From dynamic form
+      facility_tenure_months,  // HLB dynamic form (months)
+      tenure_years,             // OCBC dynamic form (years)
       has_cash_out,
       cash_out_amount,
       finance_legal_fees,
@@ -390,7 +391,12 @@ export async function POST(request: NextRequest) {
         proposed_bank_id: proposed_bank_id || (bfd.proposed_bank_db_id as string) || null,
         proposed_loan_amount: (proposed_loan_amount || facility_amount) ? Number(proposed_loan_amount || facility_amount) : null,
         proposed_interest_rate: (proposed_interest_rate || interest_rate) ? Number(proposed_interest_rate || interest_rate) : null,
-        proposed_tenure_months: (proposed_tenure_months || facility_tenure_months) ? Number(proposed_tenure_months || facility_tenure_months) : null,
+        proposed_tenure_months: (() => {
+          if (proposed_tenure_months) return Number(proposed_tenure_months)
+          if (facility_tenure_months) return Number(facility_tenure_months)
+          if (tenure_years) return Number(tenure_years) * 12
+          return null
+        })(),
         has_cash_out: has_cash_out || false,
         cash_out_amount: cash_out_amount ? Number(cash_out_amount) : null,
         finance_legal_fees: finance_legal_fees || false,

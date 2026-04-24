@@ -6,8 +6,10 @@
 -- 1. Commissions (references cases)
 DELETE FROM commissions;
 
--- 2. Case activity logs / comments (if table exists)
-DELETE FROM case_activity_log;
+-- 2. Case history / comments / documents (children of cases)
+DELETE FROM case_status_history;
+DELETE FROM case_comments;
+DELETE FROM case_documents;
 
 -- 3. Cases
 DELETE FROM cases;

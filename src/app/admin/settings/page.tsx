@@ -7,15 +7,18 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { USER_ROLE_LABELS, type UserRole } from "@/types/database"
+import { ChangePasswordCard } from "@/components/shared/change-password-card"
+import { KeyRound } from "lucide-react"
 
 type Bank = { id: string; name: string; commission_rate: number; is_active: boolean }
 type TierConfig = { id: string; tier: UserRole; percentage: number }
-type Lawyer = { id: string; name: string; firm: string; phone: string | null; general_email: string | null; contact_email: string | null; is_panel: boolean; la_fee: number | null; spa_fee: number | null; mot_fee: number | null; is_active: boolean; panel_banks?: string[] }
+type Lawyer = { id: string; name: string; firm: string; phone: string | null; general_email: string | null; contact_email: string | null; address: string | null; is_panel: boolean; la_fee: number | null; spa_fee: number | null; mot_fee: number | null; is_active: boolean; panel_banks?: string[] }
 
 const TABS = [
   { id: "banks", label: "Banks", icon: Landmark },
   { id: "tiers", label: "Commission Tiers", icon: Percent },
   { id: "lawyers", label: "Panel Lawyers", icon: Scale },
+  { id: "account", label: "My Account", icon: KeyRound },
 ]
 
 // ── Banks Tab ─────────────────────────────────────────────────
@@ -291,7 +294,7 @@ function TiersTab() {
 
 // ── Lawyers Tab ────────────────────────────────────────────────
 
-type EditForm = { name: string; firm: string; phone: string; general_email: string; contact_email: string; la_fee: string; spa_fee: string; mot_fee: string; panel_bank_ids: string[] }
+type EditForm = { name: string; firm: string; phone: string; general_email: string; contact_email: string; address: string; la_fee: string; spa_fee: string; mot_fee: string; panel_bank_ids: string[] }
 
 function LawyerForm({
   values, banks, onChange, onToggleBank,
@@ -327,6 +330,17 @@ function LawyerForm({
         <p className="text-xs text-gray-400 mt-0.5">Used for quotation requests (LA/SPA/MOT)</p>
       </div>
       <div className="col-span-2">
+        <label className="block text-xs font-medium text-[#0A1628] mb-1">Office Address</label>
+        <textarea
+          value={values.address}
+          onChange={(e) => onChange("address", e.target.value)}
+          placeholder="Suite 12A, Level 18, Tower B, …"
+          rows={2}
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C] resize-none"
+        />
+        <p className="text-xs text-gray-400 mt-0.5">Pre-fills the Lawyer Office Address on bank application forms so agents don't retype it.</p>
+      </div>
+      <div className="col-span-2">
         <label className="block text-xs font-medium text-[#0A1628] mb-2">Panel for Banks</label>
         <div className="flex flex-wrap gap-3">
           {banks.map((bank) => (
@@ -356,7 +370,7 @@ function LawyerForm({
   )
 }
 
-const EMPTY_FORM: EditForm = { name: "", firm: "", phone: "", general_email: "", contact_email: "", la_fee: "", spa_fee: "", mot_fee: "", panel_bank_ids: [] }
+const EMPTY_FORM: EditForm = { name: "", firm: "", phone: "", general_email: "", contact_email: "", address: "", la_fee: "", spa_fee: "", mot_fee: "", panel_bank_ids: [] }
 
 function LawyersTab() {
   const [lawyers, setLawyers] = React.useState<Lawyer[]>([])
@@ -405,6 +419,7 @@ function LawyersTab() {
       phone: l.phone || "",
       general_email: l.general_email || "",
       contact_email: l.contact_email || "",
+      address: l.address || "",
       la_fee: l.la_fee?.toString() || "",
       spa_fee: l.spa_fee?.toString() || "",
       mot_fee: l.mot_fee?.toString() || "",
@@ -420,7 +435,7 @@ function LawyersTab() {
     setSaving(true)
     const { data, error } = await supabase
       .from("lawyers")
-      .insert({ name: newLawyer.name, firm: newLawyer.firm, phone: newLawyer.phone || null, general_email: newLawyer.general_email || null, contact_email: newLawyer.contact_email || null, is_panel: newLawyer.panel_bank_ids.length > 0, la_fee: newLawyer.la_fee ? Number(newLawyer.la_fee) : null, spa_fee: newLawyer.spa_fee ? Number(newLawyer.spa_fee) : null, mot_fee: newLawyer.mot_fee ? Number(newLawyer.mot_fee) : null })
+      .insert({ name: newLawyer.name, firm: newLawyer.firm, phone: newLawyer.phone || null, general_email: newLawyer.general_email || null, contact_email: newLawyer.contact_email || null, address: newLawyer.address || null, is_panel: newLawyer.panel_bank_ids.length > 0, la_fee: newLawyer.la_fee ? Number(newLawyer.la_fee) : null, spa_fee: newLawyer.spa_fee ? Number(newLawyer.spa_fee) : null, mot_fee: newLawyer.mot_fee ? Number(newLawyer.mot_fee) : null })
       .select().single()
     if (error) { toast.error("Failed: " + error.message); setSaving(false); return }
     if (newLawyer.panel_bank_ids.length > 0) {
@@ -440,7 +455,7 @@ function LawyersTab() {
     const isPanel = editForm.panel_bank_ids.length > 0
     const { error } = await supabase
       .from("lawyers")
-      .update({ name: editForm.name, firm: editForm.firm, phone: editForm.phone || null, general_email: editForm.general_email || null, contact_email: editForm.contact_email || null, is_panel: isPanel, la_fee: editForm.la_fee ? Number(editForm.la_fee) : null, spa_fee: editForm.spa_fee ? Number(editForm.spa_fee) : null, mot_fee: editForm.mot_fee ? Number(editForm.mot_fee) : null })
+      .update({ name: editForm.name, firm: editForm.firm, phone: editForm.phone || null, general_email: editForm.general_email || null, contact_email: editForm.contact_email || null, address: editForm.address || null, is_panel: isPanel, la_fee: editForm.la_fee ? Number(editForm.la_fee) : null, spa_fee: editForm.spa_fee ? Number(editForm.spa_fee) : null, mot_fee: editForm.mot_fee ? Number(editForm.mot_fee) : null })
       .eq("id", lawyer.id)
     if (error) { toast.error("Failed: " + error.message); setSaving(false); return }
 
@@ -452,7 +467,7 @@ function LawyersTab() {
     }
 
     toast.success("Lawyer updated")
-    setLawyers((p) => p.map((l) => l.id === lawyer.id ? { ...l, name: editForm.name, firm: editForm.firm, phone: editForm.phone || null, general_email: editForm.general_email || null, contact_email: editForm.contact_email || null, is_panel: isPanel, la_fee: editForm.la_fee ? Number(editForm.la_fee) : null, spa_fee: editForm.spa_fee ? Number(editForm.spa_fee) : null, mot_fee: editForm.mot_fee ? Number(editForm.mot_fee) : null, panel_banks: editForm.panel_bank_ids } : l))
+    setLawyers((p) => p.map((l) => l.id === lawyer.id ? { ...l, name: editForm.name, firm: editForm.firm, phone: editForm.phone || null, general_email: editForm.general_email || null, contact_email: editForm.contact_email || null, address: editForm.address || null, is_panel: isPanel, la_fee: editForm.la_fee ? Number(editForm.la_fee) : null, spa_fee: editForm.spa_fee ? Number(editForm.spa_fee) : null, mot_fee: editForm.mot_fee ? Number(editForm.mot_fee) : null, panel_banks: editForm.panel_bank_ids } : l))
     cancelEdit()
     setSaving(false)
   }
@@ -675,6 +690,7 @@ export default function AdminSettingsPage() {
           {activeTab === "banks" && <BanksTab />}
           {activeTab === "tiers" && <TiersTab />}
           {activeTab === "lawyers" && <LawyersTab />}
+          {activeTab === "account" && <ChangePasswordCard />}
         </CardContent>
       </Card>
 

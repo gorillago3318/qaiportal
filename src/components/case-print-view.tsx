@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Printer, X, FileText, Download, Loader2 } from 'lucide-react'
 import { HLBFormPreview } from '@/components/hlb-form-preview'
+import { OCBCDownloadView } from '@/components/ocbc-download-view'
 
 interface CasePrintViewProps {
   caseData: any
@@ -18,6 +19,11 @@ export function CasePrintView({ caseData, onClose, bankId }: CasePrintViewProps)
   // ── HLB: use the dedicated overlay preview ──────────────────────────────────
   if (bankId === 'hong_leong_bank' || bankId === 'hlb') {
     return <HLBFormPreview data={caseData} onClose={onClose} />
+  }
+
+  // ── OCBC: generate official fillable PDF server-side, download in browser ─
+  if (bankId === 'ocbc' || bankId === 'ocbc_al_amin') {
+    return <OCBCDownloadView caseData={caseData} onClose={onClose} />
   }
   
   const handlePrint = () => {

@@ -30,6 +30,7 @@ import {
   USER_ROLE_LABELS,
 } from '@/types/database'
 import type { CaseStatus, LoanType, UserRole } from '@/types/database'
+import { ActivityTimeline } from '@/components/shared/activity-timeline'
 
 const statusColors: Record<CaseStatus, string> = {
   draft: 'bg-gray-100 text-gray-600',
@@ -194,6 +195,44 @@ function Stage2Panel({ caseId, caseData, onRefresh }: { caseId: string; caseData
   const [savingValuers, setSavingValuers] = useState(false)
   const [valuersSaved, setValuersSaved] = useState(false)
 
+  // New-loan finance-cost toggles + professional fee (saved inside bank_form_data)
+  const [financeLegal, setFinanceLegal]       = useState<boolean>(!!bfd.finance_legal_fee_on_loan)
+  const [financeValuation, setFinanceValuation] = useState<boolean>(!!bfd.finance_valuation_fee_on_loan)
+  const [financeStampDuty, setFinanceStampDuty] = useState<boolean>(!!bfd.finance_stamp_duty_on_loan)
+  const [professionalFee, setProfessionalFee] = useState<string>(
+    bfd.lawyer_professional_fee != null ? String(bfd.lawyer_professional_fee) : ''
+  )
+  const [savingExtras, setSavingExtras] = useState(false)
+  const [extrasSaved, setExtrasSaved] = useState(false)
+
+  const handleSaveExtras = async () => {
+    setSavingExtras(true)
+    try {
+      const mergedBfd = {
+        ...bfd,
+        finance_legal_fee_on_loan:     financeLegal,
+        finance_valuation_fee_on_loan: financeValuation,
+        finance_stamp_duty_on_loan:    financeStampDuty,
+        lawyer_professional_fee:       professionalFee ? parseFloat(professionalFee) : null,
+      }
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bank_form_data: mergedBfd,
+          lawyer_professional_fee: professionalFee ? parseFloat(professionalFee) : null,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      setExtrasSaved(true)
+      onRefresh()
+    } catch {
+      toast.error('Failed to save')
+    } finally {
+      setSavingExtras(false)
+    }
+  }
+
   // Lawyer quotation state
   const [panelLawyers, setPanelLawyers] = useState<LawyerRow[]>([])
   const [loadingLawyers, setLoadingLawyers] = useState(true)
@@ -344,10 +383,88 @@ function Stage2Panel({ caseId, caseData, onRefresh }: { caseId: string; caseData
 
         <div className="border-t border-gray-100" />
 
-        {/* 2B — Lawyer Quotation */}
+        {/* 2B — New Loan Composition + Professional Fee */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-[#0A1628]">
+            2B — New Loan Composition & Professional Fee
+          </h3>
+          <p className="text-xs text-gray-500">
+            Does the client want legal / valuation / stamp duty financed into the new loan?
+            These flags are read by the commission engine and affect the total financing amount.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <label className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 cursor-pointer text-sm">
+              <input
+                type="checkbox"
+                checked={financeLegal}
+                onChange={(e) => { setFinanceLegal(e.target.checked); setExtrasSaved(false) }}
+                className="rounded border-gray-300 text-[#C9A84C] focus:ring-[#C9A84C]"
+              />
+              Finance Legal Fee
+            </label>
+            <label className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 cursor-pointer text-sm">
+              <input
+                type="checkbox"
+                checked={financeValuation}
+                onChange={(e) => { setFinanceValuation(e.target.checked); setExtrasSaved(false) }}
+                className="rounded border-gray-300 text-[#C9A84C] focus:ring-[#C9A84C]"
+              />
+              Finance Valuation Fee
+            </label>
+            <label className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 cursor-pointer text-sm">
+              <input
+                type="checkbox"
+                checked={financeStampDuty}
+                onChange={(e) => { setFinanceStampDuty(e.target.checked); setExtrasSaved(false) }}
+                className="rounded border-gray-300 text-[#C9A84C] focus:ring-[#C9A84C]"
+              />
+              Finance Stamp Duty
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Lawyer Professional Fee (RM)
+              <span className="text-gray-400 font-normal"> — enter after receiving quotation reply</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              className={cls}
+              placeholder="e.g. 4500"
+              value={professionalFee}
+              onChange={(e) => { setProfessionalFee(e.target.value); setExtrasSaved(false) }}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Used by the commission engine when the lawyer is a panel lawyer. Admin can override later.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              disabled={savingExtras}
+              onClick={handleSaveExtras}
+              className="bg-[#0A1628] text-white hover:bg-[#0d1f38]"
+            >
+              {savingExtras ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+              Save Finance Costs & Fee
+            </Button>
+            {extrasSaved && (
+              <span className="text-xs text-green-600 flex items-center gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100" />
+
+        {/* 2C — Lawyer Quotation */}
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-[#0A1628] flex items-center gap-2">
-            2B — Lawyer Quotation Request
+            2C — Lawyer Quotation Request
           </h3>
 
           {/* Past requests */}
@@ -819,7 +936,7 @@ export default function AgentCaseDetailPage() {
             </p>
           </div>
         </div>
-        {c.status === 'draft' && (
+        {(c.status === 'draft' || c.status === 'kiv') && (
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => router.push(`/agent/cases/new?id=${id}`)}>
               <Edit className="h-4 w-4" />
@@ -827,7 +944,7 @@ export default function AgentCaseDetailPage() {
             </Button>
             <Button variant="gold" size="sm" onClick={() => setShowSubmitModal(true)}>
               <Send className="h-4 w-4" />
-              Submit Case
+              {c.status === 'kiv' ? 'Resubmit Case' : 'Submit Case'}
             </Button>
           </div>
         )}
@@ -1193,6 +1310,9 @@ export default function AgentCaseDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Activity timeline */}
+      <ActivityTimeline caseId={id} />
 
       {/* Accept Case Modal (approved → accepted) */}
       {showAcceptModal && (

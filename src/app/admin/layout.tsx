@@ -90,6 +90,7 @@ export default function AdminLayout({
           userName={userName}
           userEmail={userEmail}
           onLogout={handleLogout}
+          notificationsHref="/admin/notifications"
         />
         <main className="portal-content">
           {children}

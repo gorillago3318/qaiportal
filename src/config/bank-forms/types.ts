@@ -13,6 +13,7 @@ export type FieldType =
   | 'currency'
   | 'percentage'
   | 'group_header'
+  | 'readonly_total'
 
 export interface FieldOption {
   label: string
@@ -43,6 +44,8 @@ export interface FormField {
   gridColumn?: 1 | 2 // Span 1 or 2 columns in grid
   // For radio fields: renders an inline RM input when value === 'yes'
   sub_field?: { id: string; label: string }
+  // For readonly_total: list of field ids whose numeric values are summed for display
+  sources?: string[]
 }
 
 export interface FormSection {

@@ -129,6 +129,7 @@ export default function AgentDashboardPage() {
   const [totalCases, setTotalCases] = React.useState(0)
   const [activeCases, setActiveCases] = React.useState(0)
   const [paidCommissions, setPaidCommissions] = React.useState(0)
+  const [pipelineCommissions, setPipelineCommissions] = React.useState(0)
   const [notifications, setNotifications] = React.useState<AppNotification[]>([])
   const [loading, setLoading] = React.useState(true)
 
@@ -181,29 +182,24 @@ export default function AgentDashboardPage() {
         setActiveCases(active)
       }
 
-      // Fetch paid commissions (via cases)
-      const { data: paidCases } = await supabase
-        .from("cases")
-        .select("id")
-        .eq("agent_id", user.id)
-        .eq("status", "paid")
-
-      if (paidCases && paidCases.length > 0) {
-        const caseIds = paidCases.map((c: { id: string }) => c.id)
-        const { data: commissionsData } = await supabase
-          .from("commissions")
-          .select("paid_amount")
-          .in("case_id", caseIds)
-          .eq("status", "paid")
-
-        if (commissionsData) {
-          const total = commissionsData.reduce(
-            (sum, c: { paid_amount: number | null }) => sum + (c.paid_amount || 0),
-            0
+      // Fetch commissions via API (handles upline tier_breakdown correctly)
+      try {
+        const commRes = await fetch('/api/commissions')
+        if (commRes.ok) {
+          const commJson = await commRes.json()
+          const comms: { status: string; my_share: number | null; paid_amount: number | null; net_distributable: number }[] = commJson.data || []
+          const myShare = (c: typeof comms[0]) => c.my_share ?? c.net_distributable
+          setPipelineCommissions(
+            comms.filter(c => c.status === 'calculated' || c.status === 'payment_pending')
+              .reduce((sum, c) => sum + myShare(c), 0)
           )
-          setPaidCommissions(total)
+          // Always use my_share — paid_amount is total case commission, not per-user.
+          setPaidCommissions(
+            comms.filter(c => c.status === 'paid')
+              .reduce((sum, c) => sum + myShare(c), 0)
+          )
         }
-      }
+      } catch { /* non-fatal */ }
 
       // Fetch recent calculations (last 5)
       const { data: calcsData } = await supabase
@@ -281,7 +277,7 @@ export default function AgentDashboardPage() {
         />
         <StatCard
           label="Commission Pipeline"
-          value={loading ? "—" : formatCurrency(0)}
+          value={loading ? "—" : formatCurrency(pipelineCommissions)}
           icon={DollarSign}
           iconBg="bg-purple-50"
           iconColor="text-purple-600"

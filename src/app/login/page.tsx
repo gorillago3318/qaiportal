@@ -139,6 +139,12 @@ export default function LoginPage() {
               </button>
             </form>
 
+            <div className="mt-4 text-right">
+              <a href="/forgot-password" className="text-xs font-medium text-[#D7263D] hover:underline">
+                Forgot password?
+              </a>
+            </div>
+
             <div className="mt-6 pt-6 border-t border-[#111113]/10 text-center">
               <p className="text-xs text-zinc-400">
                 Account access is managed by your administrator.

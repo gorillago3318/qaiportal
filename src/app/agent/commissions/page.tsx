@@ -22,13 +22,23 @@ const commissionStatusLabels: Record<CommissionStatus, string> = {
   paid: 'Paid',
 }
 
+interface TierEntry {
+  role: string
+  name: string
+  percentage: number
+  amount: number
+  is_platform_fee?: boolean
+}
+
 interface CommissionItem {
   id: string
   case_id: string
   type: 'bank' | 'lawyer'
   gross_amount: number
   net_distributable: number
-  tier_breakdown: Record<string, number>
+  tier_breakdown: Record<string, TierEntry>
+  /** Server-computed: this user's share from tier_breakdown. */
+  my_share: number | null
   status: CommissionStatus
   paid_amount: number | null
   paid_at: string | null
@@ -96,17 +106,22 @@ export default function AgentCommissionsPage() {
     fetchCommissions()
   }, [fetchCommissions])
 
+  // my_share is the server-computed per-user amount (handles both direct agent and upline)
+  const myShareOf = (c: CommissionItem) => c.my_share ?? c.net_distributable
+
+  // Always use my_share for per-user totals.
+  // paid_amount on each row = sum of all rows' net_distributable (case total), NOT this user's cut.
   const totalEarned = commissions
     .filter((c) => c.status === 'paid')
-    .reduce((sum, c) => sum + (c.paid_amount ?? c.net_distributable), 0)
+    .reduce((sum, c) => sum + myShareOf(c), 0)
 
   const pendingAmount = commissions
     .filter((c) => c.status === 'pending' || c.status === 'calculated')
-    .reduce((sum, c) => sum + c.net_distributable, 0)
+    .reduce((sum, c) => sum + myShareOf(c), 0)
 
   const paymentPendingAmount = commissions
     .filter((c) => c.status === 'payment_pending')
-    .reduce((sum, c) => sum + c.net_distributable, 0)
+    .reduce((sum, c) => sum + myShareOf(c), 0)
 
   const filterTabs: { label: string; value: CommissionStatus | 'all' }[] = [
     { label: 'All', value: 'all' },
@@ -187,11 +202,7 @@ export default function AgentCommissionsPage() {
                 </thead>
                 <tbody className="divide-y divide-[#F3F4F6]">
                   {commissions.map((comm) => {
-                    const agentId = comm.case?.agent_id
-                    const myShare =
-                      agentId && comm.tier_breakdown[agentId] !== undefined
-                        ? Number(comm.tier_breakdown[agentId])
-                        : null
+                    const myShare = myShareOf(comm)
                     return (
                       <tr key={comm.id} className="hover:bg-[#F9FAFB] transition-colors">
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
@@ -207,7 +218,7 @@ export default function AgentCommissionsPage() {
                         </td>
                         <td className="px-3 sm:px-4 py-3 sm:py-4 font-medium text-[#0A1628] hidden md:table-cell">{formatCurrency(comm.gross_amount)}</td>
                         <td className="px-3 sm:px-4 py-3 sm:py-4 font-medium text-[#0A1628]">
-                          {myShare !== null ? formatCurrency(myShare) : formatCurrency(comm.net_distributable)}
+                          {formatCurrency(myShare)}
                         </td>
                         <td className="px-3 sm:px-4 py-3 sm:py-4">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${commissionStatusColors[comm.status]}`}>

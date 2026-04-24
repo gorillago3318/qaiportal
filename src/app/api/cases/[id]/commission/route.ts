@@ -28,11 +28,12 @@ function getSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
 /**
  * POST /api/cases/[id]/commission
  *
- * Step 1 of 2-step commission flow: Calculate and lock commission.
- * Sets commission status → 'calculated', case status → 'payment_pending'.
+ * Advances existing commission rows for this case to the next status:
+ *   calculated → payment_pending
+ *   payment_pending → paid
  *
- * Input: { bank_gross, bank_discount?, professional_fee?, notes? }
- * See: docs/core/constitution.md Part 3 for commission rules.
+ * Body (optional for paid step): { payment_reference?, paid_at? }
+ * Admin/super_admin only.
  */
 export async function POST(
   request: NextRequest,
@@ -42,7 +43,7 @@ export async function POST(
     const { id } = await params
     const cookieStore = await cookies()
     const supabase = getSupabase(cookieStore)
-    const adminClient = getAdminClient()
+    const adminClient = getAdminClient() as any
 
     // ── Auth ──
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -55,208 +56,114 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // ── Parse Input ──
-    const body = await request.json()
-    const {
-      bank_gross,
-      bank_discount = 0,
-      professional_fee,
-      notes = '',
-    } = body
+    const body = await request.json().catch(() => ({}))
+    const { payment_reference, paid_at, type } = body
+    // `type`: optional 'bank' | 'lawyer' — advance only that commission type.
+    // When omitted, advances all types for the case (original behaviour).
 
-    if (!bank_gross || bank_gross <= 0) {
-      return NextResponse.json({ error: 'bank_gross must be > 0' }, { status: 400 })
-    }
-
-    // ── Fetch Case ──
+    // ── Fetch commissions for this case (optionally filtered by type) ──
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: caseData, error: caseErr }: { data: any; error: any } = await (adminClient as any)
-      .from('cases')
-      .select('agent_id, agency_id, status, lawyer_id, case_code')
-      .eq('id', id)
-      .single()
-
-    if (caseErr || !caseData) {
-      return NextResponse.json({ error: 'Case not found' }, { status: 404 })
-    }
-
-    // Check if commission already calculated
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingComm }: { data: any } = await (adminClient as any)
+    let commQuery = adminClient
       .from('commissions')
-      .select('id, status')
+      .select('id, status, net_distributable, type')
       .eq('case_id', id)
-      .limit(1)
-      .maybeSingle()
+    if (type) commQuery = commQuery.eq('type', type)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: comms, error: commErr }: { data: any; error: any } = await commQuery
 
-    if (existingComm) {
+    if (commErr) {
+      return NextResponse.json({ error: commErr.message }, { status: 500 })
+    }
+
+    if (!comms || comms.length === 0) {
       return NextResponse.json(
-        { error: 'Commission already calculated for this case. Use /pay or /confirm to advance status.' },
-        { status: 409 }
+        { error: 'No commissions found for this case. Ensure the case has been accepted first.' },
+        { status: 404 }
       )
     }
 
-    // ── Load Tier Config (agency-scoped) ──
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: configs }: { data: any } = await (adminClient as any)
-      .from('commission_tier_config')
-      .select('tier, percentage')
-      .eq('agency_id', caseData.agency_id)
+    // Determine current status (use the first row — same type rows share the same status)
+    const currentStatus: string = comms[0].status
 
-    const configMap: Record<string, number> = {}
-    configs?.forEach((c: { tier: string; percentage: number }) => {
-      configMap[c.tier] = c.percentage
-    })
-
-    // ── Panel Lawyer Check (authoritative) ──
-    const panelLawyerConfirmed = await isPanelLawyer(adminClient, caseData.lawyer_id)
-
-    // ── Super Admin ID ──
-    const superAdminId = await getSuperAdminId(adminClient)
-
-    // ── Bank Commission ──
-    const bankResult = await calculateBankCommission({
-      caseId: id,
-      caseAgentId: caseData.agent_id,
-      agencyId: caseData.agency_id,
-      bankGross: bank_gross,
-      adminOverride: bank_discount,
-      panelLawyerConfirmed,
-      notes,
-      adminClient,
-      configMap,
-      superAdminId,
-    })
-
-    // ── Lawyer Commission (panel only, if fee provided) ──
-    let lawyerResult = null
-    if (panelLawyerConfirmed && professional_fee && professional_fee > 0) {
-      lawyerResult = await calculateLawyerCommission({
-        caseId: id,
-        caseAgentId: caseData.agent_id,
-        professionalFee: professional_fee,
-        notes,
-        adminClient,
-        configMap,
-        superAdminId,
-      })
+    let nextStatus: string
+    if (currentStatus === 'calculated') {
+      nextStatus = 'payment_pending'
+    } else if (currentStatus === 'payment_pending') {
+      nextStatus = 'paid'
+    } else if (currentStatus === 'paid') {
+      return NextResponse.json({ message: 'Commission already paid', status: 'paid' })
+    } else {
+      return NextResponse.json({ error: `Cannot advance from status: ${currentStatus}` }, { status: 400 })
     }
 
-    // ── Insert Bank Commission (status: calculated) ──
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: bankCommData, error: bankErr }: { data: any; error: any } = await supabase
-      .from('commissions')
-      .insert({
-        type: 'bank',
-        case_id: id,
-        gross_amount: bankResult.gross,
-        discount_amount: bankResult.flatDeduction + bankResult.panelDeduction + bankResult.adminOverride,
-        net_distributable: bankResult.netDistributable,
-        company_cut: bankResult.tierBreakdown.breakdown[superAdminId ?? '']?.amount ?? 0,
-        tier_breakdown: {
-          ...bankResult.tierBreakdown.breakdown,
-          _co_broke: bankResult.coBroke.hasCoBroke ? {
-            referrer_agent_id: bankResult.coBroke.referrerAgentId,
-            referrer_amount: bankResult.coBroke.referrerAmount,
-            doer_agent_id: bankResult.coBroke.doerAgentId,
-            doer_pool: bankResult.coBroke.doerPool,
-          } : null,
-        },
-        commission_notes: bankResult.notes,
-        status: 'calculated',
-      })
-      .select()
-      .single()
+    const commIds = comms.map((c: { id: string }) => c.id)
+    const paidAt = paid_at || new Date().toISOString()
 
-    if (bankErr) {
-      return NextResponse.json({ error: `Bank commission insert failed: ${bankErr.message}` }, { status: 500 })
-    }
-
-    // ── Insert Lawyer Commission ──
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let lawyerCommData: any = null
-    if (lawyerResult) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: lwErr }: { data: any; error: any } = await supabase
+    // ── Advance each commission row individually (paid_amount = that row's own net_distributable) ──
+    for (const comm of comms) {
+      const updateData: Record<string, unknown> = { status: nextStatus }
+      if (nextStatus === 'paid') {
+        updateData.paid_amount = comm.net_distributable || 0
+        updateData.paid_at = paidAt
+        if (payment_reference) updateData.payment_reference = payment_reference
+      }
+      const { error: updateErr } = await adminClient
         .from('commissions')
-        .insert({
-          type: 'lawyer',
-          case_id: id,
-          gross_amount: lawyerResult.gross,
-          discount_amount: lawyerResult.companyCut,
-          net_distributable: lawyerResult.netDistributable,
-          company_cut: lawyerResult.tierBreakdown.breakdown[superAdminId ?? '']?.amount ?? 0,
-          tier_breakdown: {
-            ...lawyerResult.tierBreakdown.breakdown,
-            _co_broke: lawyerResult.coBroke.hasCoBroke ? {
-              referrer_agent_id: lawyerResult.coBroke.referrerAgentId,
-              referrer_amount: lawyerResult.coBroke.referrerAmount,
-              doer_agent_id: lawyerResult.coBroke.doerAgentId,
-              doer_pool: lawyerResult.coBroke.doerPool,
-            } : null,
-          },
-          commission_notes: lawyerResult.notes,
-          status: 'calculated',
-        })
-        .select()
-        .single()
-
-      if (lwErr) console.error('Lawyer commission insert error:', lwErr)
-      else lawyerCommData = data
+        .update(updateData)
+        .eq('id', comm.id)
+      if (updateErr) {
+        return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      }
     }
 
-    // ── Advance Case to payment_pending (Step 1 of 2-step flow) ──
-    await supabase.from('cases').update({ status: 'payment_pending' }).eq('id', id)
-    await supabase.from('case_status_history').insert({
-      case_id: id,
-      from_status: caseData.status,
-      to_status: 'payment_pending',
-      changed_by: user.id,
-      notes: 'Commission calculated. Awaiting payment.',
-    })
+    // ── Advance case status — only if ALL commission rows for the case are at or beyond nextStatus ──
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: allComms }: { data: any } = await adminClient
+      .from('commissions')
+      .select('status')
+      .eq('case_id', id)
+    const allPaid = allComms?.every((c: { status: string }) => c.status === 'paid')
+    const allAtLeastPending = allComms?.every((c: { status: string }) =>
+      c.status === 'payment_pending' || c.status === 'paid'
+    )
 
-    // ── Notify Agent ──
-    const agentBankAmount = bankResult.tierBreakdown.breakdown[caseData.agent_id]?.amount ?? 0
-    const agentLawyerAmount = lawyerResult?.tierBreakdown.breakdown[caseData.agent_id]?.amount ?? 0
-    const referrerAmount = bankResult.coBroke.referrerAmount
+    let caseNextStatus: string | null = null
+    if (nextStatus === 'paid' && allPaid) {
+      caseNextStatus = 'paid'
+    } else if (nextStatus === 'payment_pending' && allAtLeastPending) {
+      caseNextStatus = 'payment_pending'
+    }
 
-    await supabase.from('notifications').insert({
-      user_id: caseData.agent_id,
-      case_id: id,
-      title: 'Commission Calculated',
-      message: `Case ${caseData.case_code}: Bank RM${agentBankAmount.toFixed(2)}${lawyerResult ? ` + Lawyer RM${agentLawyerAmount.toFixed(2)}` : ''}. Payment processing.`,
-    })
-
-    if (bankResult.coBroke.hasCoBroke && bankResult.coBroke.referrerAgentId) {
-      await supabase.from('notifications').insert({
-        user_id: bankResult.coBroke.referrerAgentId,
+    if (caseNextStatus) {
+      await adminClient.from('cases').update({ status: caseNextStatus }).eq('id', id)
+      await adminClient.from('case_status_history').insert({
         case_id: id,
-        title: 'Co-Broke Commission Calculated',
-        message: `Case ${caseData.case_code}: Your referral commission RM${referrerAmount.toFixed(2)}. Payment processing.`,
+        to_status: caseNextStatus,
+        notes: caseNextStatus === 'payment_pending'
+          ? 'Commission confirmed. Awaiting payment disbursement.'
+          : 'Commission paid.',
       })
     }
 
-    return NextResponse.json({
-      bank: bankCommData,
-      lawyer: lawyerCommData,
-      summary: {
-        bank_gross: bank_gross,
-        bank_deductions: bankResult.flatDeduction + bankResult.panelDeduction + bankResult.adminOverride,
-        bank_net: bankResult.netDistributable,
-        lawyer_professional_fee: professional_fee ?? null,
-        lawyer_net: lawyerResult?.netDistributable ?? null,
-        is_panel_lawyer: panelLawyerConfirmed,
-        has_co_broke: bankResult.coBroke.hasCoBroke,
-        referrer_amount: bankResult.coBroke.hasCoBroke ? bankResult.coBroke.referrerAmount : null,
-        agent_bank_amount: agentBankAmount,
-        agent_lawyer_amount: agentLawyerAmount,
-        status: 'calculated',
-        next_step: 'POST /api/cases/{id}/commission/pay to mark payment sent',
-      },
-    })
+    // ── Notify agent when fully paid ──
+    if (nextStatus === 'paid' && allPaid) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: caseRow }: { data: any } = await adminClient
+        .from('cases').select('agent_id, case_code').eq('id', id).single()
+      if (caseRow) {
+        const typeLabel = type ? ` (${type})` : ''
+        await adminClient.from('notifications').insert({
+          user_id: caseRow.agent_id, case_id: id,
+          title: 'Commission Paid',
+          message: `Case ${caseRow.case_code}: Your commission${typeLabel} has been disbursed.`,
+        })
+      }
+    }
+
+    return NextResponse.json({ success: true, advanced_to: nextStatus, commission_count: commIds.length, type: type || 'all' })
 
   } catch (err) {
-    console.error('Commission Error:', err)
+    console.error('Commission advance error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

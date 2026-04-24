@@ -9,9 +9,9 @@
 
 import {
   BANK_FLAT_DEDUCTION_RM,
-  BANK_PANEL_LOAN_AGR_DEDUCTION_RM,
   LAWYER_QAI_SHARE_PCT,
   LAWYER_COMPANY_CUT_PCT,
+  LAWYER_PANEL_DEDUCTION_RM,
   SUPER_ADMIN_PLATFORM_FEE_PCT,
   CO_BROKE_REFERRER_SHARE_PCT,
   CO_BROKE_DOER_SHARE_PCT,
@@ -27,6 +27,8 @@ export interface TierEntry {
   amount: number
   is_platform_fee?: boolean
   is_referrer?: boolean
+  /** Agent-specific discount deducted from this entry's amount (special arrangement). */
+  special_discount?: number
 }
 
 export interface TierBreakdown {
@@ -48,10 +50,8 @@ export interface CommissionSplit {
 export interface BankCommissionResult {
   gross: number
   flatDeduction: number
-  panelDeduction: number
-  adminOverride: number
   netDistributable: number
-  coBroke: CommissionSplit
+  /** Simplified tier breakdown: 100% assigned to the submitting agent. */
   tierBreakdown: TierBreakdown
   notes: string
 }
@@ -60,6 +60,7 @@ export interface LawyerCommissionResult {
   gross: number
   qaiShare: number
   companyCut: number
+  panelDeduction: number
   netDistributable: number
   coBroke: CommissionSplit
   tierBreakdown: TierBreakdown
@@ -232,58 +233,56 @@ export async function getSuperAdminId(
 }
 
 // ─── Bank commission calculation ──────────────────────────────────────────────
+// Rule (confirmed 2026-04-24): deduct RM50 admin fee, agent receives 100% of remainder.
+// No tier distribution, no panel-lawyer deduction, no admin override.
 
 export interface BankCommissionInput {
-  caseId: string
   caseAgentId: string
-  agencyId: string
   bankGross: number
-  adminOverride: number
-  panelLawyerConfirmed: boolean
   notes?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   adminClient: any
-  configMap: Record<string, number>
-  superAdminId: string | null
 }
 
 export async function calculateBankCommission(
   input: BankCommissionInput
 ): Promise<BankCommissionResult> {
-  const {
-    caseId, caseAgentId, bankGross, adminOverride, panelLawyerConfirmed, notes,
-    adminClient, configMap, superAdminId
-  } = input
+  const { caseAgentId, bankGross, notes, adminClient } = input
 
   const flatDeduction = BANK_FLAT_DEDUCTION_RM
-  const panelDeduction = panelLawyerConfirmed ? BANK_PANEL_LOAN_AGR_DEDUCTION_RM : 0
-  const netDistributable = Math.max(0, bankGross - flatDeduction - panelDeduction - adminOverride)
+  const netDistributable = parseFloat(Math.max(0, bankGross - flatDeduction).toFixed(2))
 
-  const coBroke = await resolveCoBroke(adminClient, caseId, caseAgentId, netDistributable)
-  const tierBreakdown = await buildTierBreakdown(
-    adminClient,
-    coBroke.doerAgentId,
-    coBroke.doerPool,
-    configMap,
-    superAdminId
-  )
+  // Fetch agent profile so the tier_breakdown record is human-readable
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: agentProfile }: { data: any } = await adminClient
+    .from('profiles')
+    .select('id, full_name, role')
+    .eq('id', caseAgentId)
+    .single()
+
+  const tierBreakdown: TierBreakdown = {
+    breakdown: {
+      [caseAgentId]: {
+        role: agentProfile?.role ?? 'agent',
+        name: agentProfile?.full_name ?? 'Agent',
+        percentage: 100,
+        amount: netDistributable,
+      },
+    },
+    platformFeeRecipientId: null,
+  }
 
   const noteStr = [
     `Bank gross: RM${bankGross.toFixed(2)}`,
-    `Deductions: RM${flatDeduction} (flat)`,
-    panelLawyerConfirmed ? `+ RM${panelDeduction} (panel loan agr)` : null,
-    adminOverride > 0 ? `+ RM${adminOverride} (admin adj)` : null,
-    coBroke.hasCoBroke ? `Co-broke: referrer RM${coBroke.referrerAmount.toFixed(2)} | doer pool RM${coBroke.doerPool.toFixed(2)}` : null,
+    `Admin fee: RM${flatDeduction}`,
+    `Net to agent (100%): RM${netDistributable.toFixed(2)}`,
     notes || null,
   ].filter(Boolean).join('. ')
 
   return {
     gross: bankGross,
     flatDeduction,
-    panelDeduction,
-    adminOverride,
     netDistributable,
-    coBroke,
     tierBreakdown,
     notes: noteStr,
   }
@@ -295,6 +294,13 @@ export interface LawyerCommissionInput {
   caseId: string
   caseAgentId: string
   professionalFee: number
+  /** Whether a panel lawyer is used — triggers RM200 admin fee deduction. */
+  panelLawyerConfirmed: boolean
+  /**
+   * Special arrangement discount entered by the agent (e.g. client negotiated lower fee
+   * at LA signing). Reduces only the doer agent's tier amount — upline is unaffected.
+   */
+  specialArrangementDiscount?: number
   notes?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   adminClient: any
@@ -302,14 +308,22 @@ export interface LawyerCommissionInput {
   superAdminId: string | null
 }
 
+// Rule (confirmed 2026-04-24):
+// 1. QAI takes 70% of professional fee
+// 2. QAI keeps 10% of its share internally (company cut)
+// 3. Deduct RM200 admin fee if panel lawyer used
+// 4. Remainder goes through tier distribution
+// 5. specialArrangementDiscount reduces doer agent's tier amount only (upline untouched)
 export async function calculateLawyerCommission(
   input: LawyerCommissionInput
 ): Promise<LawyerCommissionResult> {
-  const { caseId, caseAgentId, professionalFee, notes, adminClient, configMap, superAdminId } = input
+  const { caseId, caseAgentId, professionalFee, panelLawyerConfirmed, notes, adminClient, configMap, superAdminId } = input
+  const specialDiscount = input.specialArrangementDiscount ?? 0
 
-  const qaiShare = professionalFee * LAWYER_QAI_SHARE_PCT
-  const companyCut = qaiShare * LAWYER_COMPANY_CUT_PCT
-  const netDistributable = Math.max(0, qaiShare - companyCut)
+  const qaiShare = parseFloat((professionalFee * LAWYER_QAI_SHARE_PCT).toFixed(2))
+  const companyCut = parseFloat((qaiShare * LAWYER_COMPANY_CUT_PCT).toFixed(2))
+  const panelDeduction = panelLawyerConfirmed ? LAWYER_PANEL_DEDUCTION_RM : 0
+  const netDistributable = parseFloat(Math.max(0, qaiShare - companyCut - panelDeduction).toFixed(2))
 
   const coBroke = await resolveCoBroke(adminClient, caseId, caseAgentId, netDistributable)
   const tierBreakdown = await buildTierBreakdown(
@@ -320,11 +334,24 @@ export async function calculateLawyerCommission(
     superAdminId
   )
 
+  // Apply special arrangement discount — reduces only the doer agent's amount, upline untouched
+  if (specialDiscount > 0 && tierBreakdown.breakdown[coBroke.doerAgentId]) {
+    const entry = tierBreakdown.breakdown[coBroke.doerAgentId]
+    tierBreakdown.breakdown[coBroke.doerAgentId] = {
+      ...entry,
+      amount: parseFloat(Math.max(0, entry.amount - specialDiscount).toFixed(2)),
+      special_discount: specialDiscount,
+    }
+  }
+
   const noteStr = [
     `Lawyer professional fee: RM${professionalFee.toFixed(2)}`,
-    `QAI 70% = RM${qaiShare.toFixed(2)}`,
+    `QAI 70% share = RM${qaiShare.toFixed(2)}`,
     `Company 10% cut = RM${companyCut.toFixed(2)}`,
+    panelLawyerConfirmed ? `Panel admin fee = RM${panelDeduction}` : null,
+    `Net distributable = RM${netDistributable.toFixed(2)}`,
     coBroke.hasCoBroke ? `Co-broke: referrer RM${coBroke.referrerAmount.toFixed(2)} | doer pool RM${coBroke.doerPool.toFixed(2)}` : null,
+    specialDiscount > 0 ? `Special arrangement discount = RM${specialDiscount.toFixed(2)}` : null,
     notes || null,
   ].filter(Boolean).join('. ')
 
@@ -332,6 +359,7 @@ export async function calculateLawyerCommission(
     gross: professionalFee,
     qaiShare,
     companyCut,
+    panelDeduction,
     netDistributable,
     coBroke,
     tierBreakdown,

@@ -43,6 +43,8 @@ export default function CalculationsPage() {
   const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
   const [activeTab, setActiveTab] = React.useState<FilterTab>("all")
+  // Hide calculations that have already been converted to a case (default: hidden)
+  const [showConverted, setShowConverted] = React.useState(false)
 
   React.useEffect(() => {
     const supabase = createClient()
@@ -54,14 +56,18 @@ export default function CalculationsPage() {
         return
       }
 
-      const { data, error } = await supabase
+      let query = supabase
         .from("calculations")
-        .select(`
-          *,
-          proposed_bank:proposed_bank_id (name)
-        `)
+        .select(`*, proposed_bank:proposed_bank_id (name)`)
         .eq("agent_id", user.id)
         .order("created_at", { ascending: false })
+
+      // Unless the agent explicitly wants to see converted ones, hide them
+      if (!showConverted) {
+        query = query.is("converted_to_case_id", null)
+      }
+
+      const { data, error } = await query
 
       if (error) {
         toast.error("Failed to load calculations")
@@ -72,7 +78,7 @@ export default function CalculationsPage() {
     }
 
     fetchCalcs()
-  }, [router])
+  }, [router, showConverted])
 
   const filtered = calculations.filter((calc) => {
     const matchesSearch =
@@ -132,21 +138,34 @@ export default function CalculationsPage() {
             )}
           />
         </div>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-all",
-                activeTab === tab.value
-                  ? "bg-white text-[#0A1628] shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => setActiveTab(tab.value)}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                  activeTab === tab.value
+                    ? "bg-white text-[#0A1628] shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowConverted((v) => !v)}
+            className={cn(
+              "h-9 px-3 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap",
+              showConverted
+                ? "bg-green-50 text-green-700 border-green-200"
+                : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+            )}
+          >
+            {showConverted ? "Showing converted" : "Hide converted"}
+          </button>
         </div>
       </div>
 

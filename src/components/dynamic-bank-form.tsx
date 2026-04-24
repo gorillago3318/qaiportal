@@ -246,6 +246,24 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
     }
   }
 
+  // Read-only computed total (sum of numeric source fields)
+  if (field.type === 'readonly_total') {
+    const total = (field.sources || []).reduce((sum, id) => {
+      const n = parseFloat(value[id])
+      return sum + (isFinite(n) ? n : 0)
+    }, 0)
+    const formatted = total.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return (
+      <div className={gridClass}>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">{field.label}</label>
+        <div className="w-full h-10 px-3 flex items-center rounded-lg border border-emerald-200 bg-emerald-50 text-sm font-semibold text-emerald-900">
+          RM {formatted}
+        </div>
+        <p className="text-xs text-gray-500 mt-1">Auto-calculated: sum of the amounts above.</p>
+      </div>
+    )
+  }
+
   // Group header — full-width visual divider with title
   if (field.type === 'group_header') {
     return (

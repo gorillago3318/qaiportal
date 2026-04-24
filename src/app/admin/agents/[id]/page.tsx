@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, User, FolderOpen, Mail, Phone } from "lucide-react"
+import { ArrowLeft, User, FolderOpen, Mail, Phone, KeyRound } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -20,6 +20,7 @@ type AgentProfile = {
   agent_code: string | null
   upline_id: string | null
   is_active: boolean
+  nric_number: string | null
   bank_name: string | null
   bank_account_number: string | null
   bank_account_name: string | null
@@ -60,46 +61,54 @@ export default function AdminAgentDetailPage() {
   const [loading, setLoading] = React.useState(true)
   const [editMode, setEditMode] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
-  const [form, setForm] = React.useState({ role: "" as UserRole, is_active: true, upline_id: "" })
+  const [form, setForm] = React.useState({
+    role: "" as UserRole,
+    is_active: true,
+    upline_id: "",
+    phone: "",
+    nric_number: "",
+    bank_name: "",
+    bank_account_name: "",
+    bank_account_number: "",
+  })
   const [allAgents, setAllAgents] = React.useState<{ id: string; full_name: string; agent_code: string | null; role: UserRole }[]>([])
 
   React.useEffect(() => {
     const fetchData = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const supabase = createClient() as any
-
-      const [agentRes, casesRes, allAgentsRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("*, upline_id, upline:profiles!profiles_upline_id_fkey(full_name, role, agent_code)")
-          .eq("id", id)
-          .single(),
-        supabase
-          .from("cases")
-          .select("id, case_code, status, loan_type, proposed_loan_amount, created_at, client:clients(full_name)")
-          .eq("agent_id", id)
-          .order("created_at", { ascending: false })
-          .limit(10),
-        supabase
-          .from("profiles")
-          .select("id, full_name, agent_code, role")
-          .not("role", "in", "(super_admin,admin)")
-          .eq("is_active", true)
-          .neq("id", id)
-          .order("role", { ascending: true }),
-      ])
-
-      if (agentRes.error || !agentRes.data) {
-        toast.error("Agent not found")
+      // Use the service-role API route so admin can always view agents in their agency,
+      // regardless of RLS on the `profiles` table.
+      const res = await fetch(`/api/agents/${id}`)
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || "Agent not found")
         router.push("/admin/agents")
         return
       }
-
-      const agentData = agentRes.data as AgentProfile
+      const agentData = json.profile as AgentProfile
       setAgent(agentData)
-      setForm({ role: agentData.role, is_active: agentData.is_active, upline_id: agentData.upline_id || "" })
-      setCases((casesRes.data || []) as CaseSummary[])
-      setAllAgents((allAgentsRes.data || []) as { id: string; full_name: string; agent_code: string | null; role: UserRole }[])
+      setForm({
+        role: agentData.role,
+        is_active: agentData.is_active,
+        upline_id: agentData.upline_id || "",
+        phone: agentData.phone || "",
+        nric_number: agentData.nric_number || "",
+        bank_name: agentData.bank_name || "",
+        bank_account_name: agentData.bank_account_name || "",
+        bank_account_number: agentData.bank_account_number || "",
+      })
+      setCases((json.cases || []) as CaseSummary[])
+
+      // Upline dropdown list — still RLS-filtered but listing is OK via /api/agents
+      const listRes = await fetch(`/api/agents`)
+      if (listRes.ok) {
+        const listJson = await listRes.json()
+        setAllAgents(
+          (listJson.data || [])
+            .filter((a: { id: string; role: UserRole; is_active: boolean }) =>
+              a.id !== id && a.is_active && a.role !== 'admin' && a.role !== 'super_admin',
+            ) as { id: string; full_name: string; agent_code: string | null; role: UserRole }[]
+        )
+      }
       setLoading(false)
     }
     fetchData()
@@ -107,31 +116,52 @@ export default function AdminAgentDetailPage() {
 
   const handleSave = async () => {
     setSaving(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createClient() as any
-    const { error } = await supabase
-      .from("profiles")
-      .update({
+    const res = await fetch(`/api/agents/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         role: form.role,
         is_active: form.is_active,
         upline_id: form.upline_id || null,
-      })
-      .eq("id", id)
-
-    if (error) {
-      toast.error("Failed to save: " + error.message)
+        phone: form.phone || null,
+        nric_number: form.nric_number || null,
+        bank_name: form.bank_name || null,
+        bank_account_name: form.bank_account_name || null,
+        bank_account_number: form.bank_account_number || null,
+      }),
+    })
+    const json = await res.json()
+    if (!res.ok) {
+      toast.error("Failed to save: " + (json.error || "Unknown error"))
     } else {
       toast.success("Profile updated")
-      // Refresh to get updated upline display name
-      const { data: refreshed } = await supabase
-        .from("profiles")
-        .select("*, upline_id, upline:profiles!profiles_upline_id_fkey(full_name, role, agent_code)")
-        .eq("id", id)
-        .single()
-      if (refreshed) setAgent(refreshed as AgentProfile)
+      setAgent(json.profile as AgentProfile)
       setEditMode(false)
     }
     setSaving(false)
+  }
+
+  const handleResetPassword = async () => {
+    if (!agent) return
+    const newPassword = window.prompt(
+      `Set a new password for ${agent.full_name} (${agent.email}).\n\nThey will be forced to change it on next login.\n\nEnter new password (min 8 chars):`
+    )
+    if (!newPassword) return
+    if (newPassword.length < 8) {
+      toast.error("Password must be at least 8 characters")
+      return
+    }
+    const res = await fetch("/api/admin/reset-agent-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_id: agent.id, new_password: newPassword }),
+    })
+    const json = await res.json()
+    if (!res.ok) {
+      toast.error(json.error || "Failed to reset password")
+      return
+    }
+    toast.success(`Password reset. ${agent.full_name} must change it on next login.`)
   }
 
   const totalCases = cases.length
@@ -160,7 +190,12 @@ export default function AdminAgentDetailPage() {
           <p className="text-sm text-gray-400 font-mono">{agent.agent_code || "No agent code"}</p>
         </div>
         {!editMode && (
-          <Button onClick={() => setEditMode(true)} variant="outline" size="sm">Edit</Button>
+          <div className="flex gap-2">
+            <Button onClick={handleResetPassword} variant="outline" size="sm" className="gap-1.5">
+              <KeyRound className="h-3.5 w-3.5" /> Reset Password
+            </Button>
+            <Button onClick={() => setEditMode(true)} variant="outline" size="sm">Edit</Button>
+          </div>
         )}
       </div>
 
@@ -233,6 +268,68 @@ export default function AdminAgentDetailPage() {
                 </select>
                 <p className="text-xs text-gray-400 mt-1">Sets who this agent reports to in the commission chain</p>
               </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+                <div>
+                  <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Phone</label>
+                  <input
+                    type="text"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    placeholder="+60…"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#0A1628] mb-1.5">NRIC</label>
+                  <input
+                    type="text"
+                    value={form.nric_number}
+                    onChange={(e) => setForm({ ...form, nric_number: e.target.value })}
+                    placeholder="901231-14-5678"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-sm font-semibold text-[#0A1628] mb-2">Bank Payout Details</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Bank Name</label>
+                    <input
+                      type="text"
+                      value={form.bank_name}
+                      onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
+                      placeholder="e.g. Maybank"
+                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Account Name</label>
+                      <input
+                        type="text"
+                        value={form.bank_account_name}
+                        onChange={(e) => setForm({ ...form, bank_account_name: e.target.value })}
+                        placeholder="As per bank record"
+                        className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Account Number</label>
+                      <input
+                        type="text"
+                        value={form.bank_account_number}
+                        onChange={(e) => setForm({ ...form, bank_account_number: e.target.value })}
+                        placeholder="No spaces"
+                        className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-[#0A1628] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setEditMode(false)} className="flex-1">Cancel</Button>
                 <Button onClick={handleSave} disabled={saving} className="flex-1 bg-[#0A1628] text-white hover:bg-[#0d1f38]">
@@ -245,12 +342,13 @@ export default function AdminAgentDetailPage() {
               {[
                 { label: "Email", icon: Mail, value: agent.email },
                 { label: "Phone", icon: Phone, value: agent.phone || "—" },
+                { label: "NRIC", icon: User, value: agent.nric_number || <span className="text-amber-600">Not provided</span> },
                 { label: "Role", icon: User, value: USER_ROLE_LABELS[agent.role] },
                 { label: "Upline", icon: User, value: agent.upline ? `${agent.upline.full_name} (${agent.upline.agent_code}) — ${USER_ROLE_LABELS[agent.upline.role]}` : "—" },
                 { label: "Status", icon: User, value: agent.is_active ? "Active" : "Inactive" },
-                { label: "Bank Name", icon: User, value: agent.bank_name || "—" },
-                { label: "Account Name", icon: User, value: agent.bank_account_name || "—" },
-                { label: "Account No.", icon: User, value: agent.bank_account_number || "—" },
+                { label: "Bank Name", icon: User, value: agent.bank_name || <span className="text-amber-600">Not provided</span> },
+                { label: "Account Name", icon: User, value: agent.bank_account_name || <span className="text-amber-600">Not provided</span> },
+                { label: "Account No.", icon: User, value: agent.bank_account_number || <span className="text-amber-600">Not provided</span> },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0">
                   <span className="text-sm text-gray-500">{label}</span>
