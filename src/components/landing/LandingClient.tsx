@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { motion, useInView, useScroll, useTransform, AnimatePresence } from "framer-motion"
 import { ArrowRight, CheckCircle, TrendingDown, Shield, Clock, Zap, ChevronDown, MessageCircle, Star } from "lucide-react"
 
@@ -149,9 +150,19 @@ function Chip({ children, red }: { children: React.ReactNode; red?: boolean }) {
 
 // ── Main Component ────────────────────────────────────────────
 interface CmsData {
+  logo_url?: string
+  company_name?: string
+  tagline?: string
   hero?: { headline?: string; subheadline?: string; cta_text?: string; cta_url?: string }
-  about?: { title?: string; body?: string; stats?: Array<{ label: string; value: string }> }
   contact?: { email?: string; phone?: string; address?: string }
+  stats?: { loans_processed?: string; experience?: string; clients?: string; avg_monthly_savings?: string }
+  why_us?: { title?: string; body?: string }
+  cta_section?: { headline?: string; subtitle?: string }
+  how_it_works?: {
+    step1_title?: string; step1_desc?: string
+    step2_title?: string; step2_desc?: string
+    step3_title?: string; step3_desc?: string
+  }
 }
 
 export default function LandingClient({ cms }: { cms: CmsData }) {
@@ -172,6 +183,16 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
   const phone = cms.contact?.phone ?? "+60126181683"
   const email = cms.contact?.email ?? "hello@quantifyai.me"
   const address = cms.contact?.address ?? "147-2, Jalan Radin Bagus, Bandar Baru Sri Petaling, 57000 KL"
+  const companyName = cms.company_name ?? "QuantifyAI"
+  const logoUrl = cms.logo_url ?? ""
+  const heroHeadline = cms.hero?.headline ?? "Your Mortgage is Costing You More Than It Should"
+  const heroSub = cms.hero?.subheadline ?? "Malaysia's most trusted AI-powered refinancing specialist. Free analysis. Real savings. Zero upfront fees — our fee is paid by the bank."
+  const ctaText = cms.hero?.cta_text ?? "Get Free Analysis"
+  const whyTitle = cms.why_us?.title ?? "Not just a broker. Your financial ally."
+  const whyBody = cms.why_us?.body ?? "Most brokers push you toward whichever bank pays them the most. We built AI to eliminate that bias — and our 20+ years in the Malaysian mortgage market means we know every nuance of the system."
+  const ctaHeadline = cms.cta_section?.headline ?? "Ready to save RM 526 every month?"
+  const ctaSub = cms.cta_section?.subtitle ?? "Your free analysis takes under 3 minutes. No commitment required."
+  const hi = cms.how_it_works ?? {}
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] text-[#111113] font-sans overflow-x-hidden">
@@ -179,12 +200,16 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
       {/* ── Navbar ─────────────────────────────────────────────── */}
       <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${navScrolled ? "bg-white/92 backdrop-blur-xl border-b border-[#111113]/8 shadow-[0_2px_20px_rgba(17,17,19,0.06)]" : ""}`}>
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, ease }}
-            className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-white shadow-[0_2px_12px_rgba(215,38,61,0.2)] flex items-center justify-center">
-              <span className="font-bold text-sm text-[#D7263D]">Q</span>
-            </div>
-            <span className="font-bold tracking-tight text-lg text-[#0A1628]">QuantifyAI</span>
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, ease }}>
+            <Link href="/" className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-white shadow-[0_2px_12px_rgba(215,38,61,0.2)] flex items-center justify-center overflow-hidden">
+                {logoUrl
+                  ? <Image src={logoUrl} alt={companyName} width={32} height={32} className="object-contain p-0.5" unoptimized />
+                  : <span className="font-bold text-sm text-[#D7263D]">Q</span>
+                }
+              </div>
+              <span className="font-bold tracking-tight text-lg text-[#0A1628]">{companyName}</span>
+            </Link>
           </motion.div>
 
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, ease, delay: 0.1 }}
@@ -225,16 +250,27 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
 
       {/* ── Hero ───────────────────────────────────────────────── */}
       <section ref={heroRef} className="relative min-h-screen flex items-center justify-center px-6 overflow-hidden">
-        <div className="absolute inset-0" style={{
-          background: "radial-gradient(circle at 20% 20%, rgba(215,38,61,0.09) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(10,22,40,0.05) 0%, transparent 50%), linear-gradient(180deg, #f9f9fb 0%, #f1f1f4 100%)"
-        }} />
+        {/* Background photo — modern Malaysian home */}
+        <div className="absolute inset-0">
+          <Image
+            src="https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1600&q=75"
+            alt="Modern home"
+            fill
+            className="object-cover object-center"
+            priority
+            unoptimized
+          />
+          <div className="absolute inset-0" style={{
+            background: "linear-gradient(180deg, rgba(249,249,251,0.92) 0%, rgba(241,241,244,0.97) 100%)"
+          }} />
+        </div>
         <div className="absolute inset-0 pointer-events-none" style={{
-          backgroundImage: "linear-gradient(rgba(215,38,61,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(215,38,61,0.04) 1px, transparent 1px)",
+          backgroundImage: "linear-gradient(rgba(215,38,61,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(215,38,61,0.035) 1px, transparent 1px)",
           backgroundSize: "56px 56px",
         }} />
-        <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }} transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+        <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.7, 0.4] }} transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
           className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full pointer-events-none"
-          style={{ background: "radial-gradient(circle, rgba(215,38,61,0.09) 0%, transparent 70%)" }}
+          style={{ background: "radial-gradient(circle, rgba(215,38,61,0.08) 0%, transparent 70%)" }}
         />
 
         <motion.div style={{ y: heroY, opacity: heroOpacity }} className="relative z-10 max-w-4xl mx-auto text-center pt-24">
@@ -246,25 +282,27 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
 
           <motion.h1 initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }}
             className="text-5xl md:text-7xl font-bold tracking-tight mb-6 text-[#0A1628] leading-[1.1]">
-            Your Mortgage is{" "}
-            <span className="relative inline-block">
-              <span className="text-[#D7263D]">Costing You More</span>
-              <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.7, ease, delay: 0.85 }}
-                className="absolute -bottom-1 left-0 right-0 h-0.5 bg-[#D7263D]/30 origin-left" />
-            </span>
-            {" "}Than It Should
+            {heroHeadline.includes("Costing") ? (
+              <>Your Mortgage is{" "}
+                <span className="relative inline-block">
+                  <span className="text-[#D7263D]">Costing You More</span>
+                  <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.7, ease, delay: 0.85 }}
+                    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-[#D7263D]/30 origin-left" />
+                </span>
+                {" "}Than It Should</>
+            ) : heroHeadline}
           </motion.h1>
 
           <motion.p initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, ease, delay: 0.35 }}
             className="text-lg md:text-xl text-[#5F5F67] mb-10 max-w-2xl mx-auto leading-relaxed">
-            Malaysia&apos;s most trusted AI-powered refinancing specialist. Free analysis. Real savings. Zero upfront fees — our fee is paid by the bank.
+            {heroSub}
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease, delay: 0.5 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
-              <Link href="/calculate" className="flex items-center gap-2 px-8 py-4 rounded-full bg-[#D7263D] text-white font-semibold hover:bg-[#B61F33] transition-colors shadow-[0_8px_24px_rgba(215,38,61,0.38)] text-sm">
-                Get Free Analysis <ArrowRight className="h-4 w-4" />
+              <Link href={ctaUrl} className="flex items-center gap-2 px-8 py-4 rounded-full bg-[#D7263D] text-white font-semibold hover:bg-[#B61F33] transition-colors shadow-[0_8px_24px_rgba(215,38,61,0.38)] text-sm">
+                {ctaText} <ArrowRight className="h-4 w-4" />
               </Link>
             </motion.div>
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
@@ -274,7 +312,7 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
             </motion.div>
           </motion.div>
 
-          {/* Floating badge */}
+          {/* Floating stat badge */}
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease, delay: 0.75 }}
             className="mt-14 inline-flex items-center gap-6 bg-white rounded-2xl px-6 py-4 border border-[#111113]/8 shadow-[0_8px_32px_rgba(17,17,19,0.08)]">
             <div className="text-left">
@@ -353,10 +391,31 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
             <h2 className="text-3xl md:text-4xl font-bold text-[#0A1628] mb-4">From analysis to savings in 3 steps</h2>
             <p className="text-[#5F5F67] text-lg max-w-xl mx-auto">We handle the complexity. You collect the savings.</p>
           </FadeIn>
-          <div className="max-w-3xl mx-auto space-y-10">
-            <StepCard num="1" title="Free AI-Powered Analysis" desc="Share your current loan details. Our AI instantly compares your position against 20+ Malaysian banks to find your optimal refinancing path." delay={0} />
-            <StepCard num="2" title="Custom Savings Strategy" desc="Your dedicated QAI consultant presents a personalised report showing exactly how much you save — monthly and over the full loan tenure." delay={0.12} />
-            <StepCard num="3" title="We Handle Everything — Free" desc="We manage all paperwork, bank submissions, and legal coordination. Zero fees upfront — our commission comes from the bank upon your approval." delay={0.24} />
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+          <div className="max-w-xl space-y-10">
+            <StepCard num="1" title={hi.step1_title ?? "Free AI-Powered Analysis"} desc={hi.step1_desc ?? "Share your current loan details. Our AI instantly compares your position against 20+ Malaysian banks to find your optimal refinancing path."} delay={0} />
+            <StepCard num="2" title={hi.step2_title ?? "Custom Savings Strategy"} desc={hi.step2_desc ?? "Your dedicated QAI consultant presents a personalised report showing exactly how much you save — monthly and over the full loan tenure."} delay={0.12} />
+            <StepCard num="3" title={hi.step3_title ?? "We Handle Everything — Free"} desc={hi.step3_desc ?? "We manage all paperwork, bank submissions, and legal coordination. Zero fees upfront — our commission comes from the bank upon your approval."} delay={0.24} />
+          </div>
+
+          {/* Right: illustration photo */}
+          <FadeIn x={40} className="hidden md:block">
+            <div className="relative rounded-3xl overflow-hidden h-[480px] shadow-[0_24px_64px_rgba(17,17,19,0.1)]">
+              <Image
+                src="https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80"
+                alt="Financial planning consultation"
+                fill
+                className="object-cover"
+                unoptimized
+              />
+              <div className="absolute inset-0 bg-gradient-to-br from-[#D7263D]/10 to-transparent" />
+              <div className="absolute top-5 left-5 bg-white/95 backdrop-blur rounded-2xl px-4 py-3 shadow-lg">
+                <p className="text-xs text-[#5F5F67]">Analysis complete</p>
+                <p className="text-base font-black text-[#D7263D]">RM 481 saved</p>
+                <p className="text-[10px] text-[#7C7C85]">per month · starting immediately</p>
+              </div>
+            </div>
+          </FadeIn>
           </div>
         </div>
       </section>
@@ -377,15 +436,39 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
       </section>
 
       {/* ── Why QAI ─────────────────────────────────────────────── */}
-      <section className="py-20 md:py-28 px-6 bg-white">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-16 items-center">
-          <FadeIn y={20}>
-            <Chip>Why QuantifyAI</Chip>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#0A1628] mb-4">Not just a broker.<br />Your financial ally.</h2>
-            <p className="text-[#5F5F67] text-lg leading-relaxed">
-              Most brokers push you toward whichever bank pays them the most. We built AI to eliminate that bias — and our 20+ years in the Malaysian mortgage market means we know every nuance of the system.
-            </p>
+      <section className="py-20 md:py-28 px-6 bg-white overflow-hidden">
+        <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
+          {/* Left: photo + text */}
+          <FadeIn y={20} className="space-y-6">
+            <div className="relative rounded-3xl overflow-hidden h-72 md:h-96 shadow-[0_24px_64px_rgba(17,17,19,0.12)]">
+              <Image
+                src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=900&q=80"
+                alt="Happy homeowner"
+                fill
+                className="object-cover object-center"
+                unoptimized
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0A1628]/30 to-transparent" />
+              {/* Floating badge */}
+              <div className="absolute bottom-5 left-5 right-5">
+                <div className="bg-white/95 backdrop-blur rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg">
+                  <div className="h-10 w-10 rounded-xl bg-[#D7263D] flex items-center justify-center flex-shrink-0">
+                    <TrendingDown className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#0A1628]">Average client saves</p>
+                    <p className="text-lg font-black text-[#D7263D]">RM 526 / month</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <Chip>Why QuantifyAI</Chip>
+              <h2 className="text-3xl md:text-4xl font-bold text-[#0A1628] mb-4">{whyTitle.includes("broker") ? <>{whyTitle.split(".")[0]}.<br />{whyTitle.split(".").slice(1).join(".").trim()}</> : whyTitle}</h2>
+              <p className="text-[#5F5F67] text-lg leading-relaxed">{whyBody}</p>
+            </div>
           </FadeIn>
+          {/* Right: 4 cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <WhyCard icon={Zap} title="AI-Powered Comparison" desc="Instantly analyse your position against 20+ banks. No guesswork, no bias." delay={0} />
             <WhyCard icon={Clock} title="20+ Years Expertise" desc="Deep Malaysian market knowledge you simply can't replace with an app." delay={0.1} />
@@ -409,10 +492,11 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
           <FadeIn>
             <div className="inline-block bg-[#D7263D]/20 text-[#D7263D] text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-full mb-6">Start Saving Today</div>
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-6 leading-tight">
-              Ready to save<br />
-              <span className="text-[#D7263D]">RM 526 every month?</span>
+              {ctaHeadline.includes("526") ? (
+                <>Ready to save<br /><span className="text-[#D7263D]">RM 526 every month?</span></>
+              ) : ctaHeadline}
             </h2>
-            <p className="text-white/60 text-lg mb-10 max-w-xl mx-auto">Your free analysis takes under 3 minutes. No commitment required.</p>
+            <p className="text-white/60 text-lg mb-10 max-w-xl mx-auto">{ctaSub}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
                 <Link href="/calculate" className="flex items-center gap-2 px-8 py-4 rounded-full bg-[#D7263D] text-white font-semibold hover:bg-[#B61F33] transition-colors shadow-[0_8px_28px_rgba(215,38,61,0.45)] text-sm">
@@ -439,10 +523,13 @@ export default function LandingClient({ cms }: { cms: CmsData }) {
       <footer className="bg-[#060f1c] py-10 px-6 border-t border-white/5">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-lg bg-white/8 flex items-center justify-center">
-              <span className="font-bold text-xs text-[#D7263D]">Q</span>
+            <div className="h-7 w-7 rounded-lg bg-white/8 flex items-center justify-center overflow-hidden">
+              {logoUrl
+                ? <Image src={logoUrl} alt={companyName} width={28} height={28} className="object-contain" unoptimized />
+                : <span className="font-bold text-xs text-[#D7263D]">Q</span>
+              }
             </div>
-            <span className="font-semibold text-white tracking-tight">QuantifyAI</span>
+            <span className="font-semibold text-white tracking-tight">{companyName}</span>
             <span className="text-white/30 text-xs">· Sdn Bhd</span>
           </div>
           <p className="text-white/30 text-xs text-center">

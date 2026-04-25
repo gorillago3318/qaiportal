@@ -11,6 +11,10 @@ import {
   ArrowRight,
   Plus,
   Eye,
+  Link2,
+  Copy,
+  CheckCheck,
+  Users,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -132,6 +136,8 @@ export default function AgentDashboardPage() {
   const [pipelineCommissions, setPipelineCommissions] = React.useState(0)
   const [notifications, setNotifications] = React.useState<AppNotification[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [referralLeads, setReferralLeads] = React.useState<Calculation[]>([])
+  const [copied, setCopied] = React.useState(false)
 
   const today = new Date().toLocaleDateString("en-MY", {
     weekday: "long",
@@ -210,6 +216,19 @@ export default function AgentDashboardPage() {
         .limit(5)
 
       if (calcsData) setRecentCalcs(calcsData as Calculation[])
+
+      // Fetch referral leads (public calculations via agent's referral link)
+      const typedProfile = profileData as Profile | null
+      if (typedProfile?.agent_code) {
+        const { data: refLeads } = await supabase
+          .from("calculations")
+          .select("*")
+          .eq("agent_id", user.id)
+          .not("referral_code", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(8)
+        if (refLeads) setReferralLeads(refLeads as Calculation[])
+      }
 
       // Fetch notifications
       const { data: notifData } = await supabase
@@ -465,6 +484,110 @@ export default function AgentDashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* Referral Link Card */}
+      {profile?.agent_code && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-[#D7263D]/8 flex items-center justify-center">
+                  <Link2 className="h-4 w-4 text-[#D7263D]" />
+                </div>
+                <CardTitle className="font-heading text-base">My Referral Link</CardTitle>
+              </div>
+              {referralLeads.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D7263D]/8 text-[#D7263D] px-2.5 py-1 rounded-full">
+                  <Users className="h-3 w-3" />
+                  {referralLeads.length} lead{referralLeads.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-10 px-3.5 rounded-xl border border-[#D8D8DE] bg-[#f6f6f7] text-sm text-[#5F5F67] font-mono flex items-center truncate select-all">
+                {typeof window !== 'undefined' ? `${window.location.origin}/calculate?ref=${profile.agent_code}` : `/calculate?ref=${profile.agent_code}`}
+              </div>
+              <button
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    navigator.clipboard.writeText(`${window.location.origin}/calculate?ref=${profile.agent_code}`)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }
+                }}
+                className={cn(
+                  "h-10 px-4 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-all flex-shrink-0",
+                  copied
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : "bg-[#D7263D] text-white hover:bg-[#B61F33] shadow-[0_2px_8px_rgba(215,38,61,0.25)]"
+                )}
+              >
+                {copied ? <><CheckCheck className="h-3.5 w-3.5" /> Copied!</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+              </button>
+            </div>
+            <p className="text-xs text-[#7C7C85]">
+              Share this link with potential clients. Any calculation they complete will be attributed to you — you&apos;ll see their details below and receive a notification.
+            </p>
+
+            {referralLeads.length > 0 && (
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-sm min-w-[380px]">
+                  <thead>
+                    <tr className="border-b border-[#E3E3E7]">
+                      <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pl-4 sm:pl-0 pr-3">Client</th>
+                      <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Contact</th>
+                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Est. Saving</th>
+                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-4 sm:pr-0 hidden sm:table-cell">Date</th>
+                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-4 sm:pr-0">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#ECECF0]">
+                    {referralLeads.map(calc => {
+                      const results = calc.results as Record<string, number> | null
+                      const saving = results?.monthlySavings ?? 0
+                      return (
+                        <tr key={calc.id} className="hover:bg-[#F5F5F8] transition-colors">
+                          <td className="py-3 pr-3 pl-4 sm:pl-0">
+                            <p className="font-medium text-[#17171A] truncate max-w-[120px]">{calc.client_name}</p>
+                            <p className="text-xs text-[#7C7C85]">via referral link</p>
+                          </td>
+                          <td className="py-3 pr-3 hidden sm:table-cell">
+                            <p className="text-xs text-[#5F5F67]">{calc.client_phone || '—'}</p>
+                          </td>
+                          <td className="py-3 pr-3 text-right">
+                            {saving > 0 ? (
+                              <span className="font-medium text-green-700 text-xs">+{formatCurrency(saving)}/mo</span>
+                            ) : <span className="text-zinc-400">—</span>}
+                          </td>
+                          <td className="py-3 pr-4 sm:pr-0 text-right text-[#5F5F67] hidden sm:table-cell text-xs">
+                            {formatDate(calc.created_at)}
+                          </td>
+                          <td className="py-3 pr-4 sm:pr-0 text-right">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={`/agent/calculations/${calc.id}`}>
+                                <Eye className="h-3 w-3" />
+                                <span className="hidden sm:inline">View</span>
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {referralLeads.length === 0 && !loading && (
+              <div className="text-center py-4 text-sm text-[#7C7C85]">
+                No referral leads yet — share your link to start tracking prospects.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Cases by Status — horizontal pills */}
       <Card>

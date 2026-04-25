@@ -230,15 +230,15 @@ export default function CalculationPrintPage() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; }
-          @page { size: A4; margin: 1.5cm; }
+          html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @page { size: A4 portrait; margin: 0; }
+          .print-doc { width: 210mm; max-width: 210mm; margin: 0 auto; font-size: 10px; }
+          .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+          .page-break-before { break-before: page; page-break-before: always; }
         }
 
         .hero-gradient {
           background: linear-gradient(135deg, #D7263D 0%, #b61f33 60%, #9a1928 100%);
-        }
-        .gold-gradient {
-          background: linear-gradient(135deg, #0A1628 0%, #152340 50%, #0A1628 100%);
         }
         .gold-glow-box {
           background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 100%);
@@ -253,7 +253,11 @@ export default function CalculationPrintPage() {
           background: #fff;
         }
         .table-best-row {
-          background: linear-gradient(90deg, rgba(201,168,76,0.10) 0%, rgba(201,168,76,0.05) 100%);
+          background: rgba(215,38,61,0.05);
+        }
+        /* Screen preview card */
+        .screen-doc-shadow {
+          box-shadow: 0 4px 40px rgba(0,0,0,0.12), 0 1px 8px rgba(0,0,0,0.06);
         }
       `}</style>
 
@@ -265,21 +269,28 @@ export default function CalculationPrintPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 bg-[#0A1628] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#152340] transition-colors"
-        >
-          <Printer className="h-4 w-4" /> Print / Save as PDF
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 hidden sm:block">Tip: use browser Print → Save as PDF, set paper to A4</span>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 bg-[#D7263D] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#b61f33] transition-colors shadow-[0_2px_12px_rgba(215,38,61,0.3)]"
+          >
+            <Printer className="h-4 w-4" /> Print / Save as PDF
+          </button>
+        </div>
       </div>
 
+      {/* ── Screen preview wrapper ── */}
+      <div className="no-print bg-gray-100 py-8 px-4 min-h-screen">
+        <div className="text-center mb-4 text-xs text-gray-400 uppercase tracking-widest font-semibold">PDF Preview — A4 Format</div>
+
       {/* ── Document ── */}
-      <div className="max-w-[820px] mx-auto bg-white print:max-w-full">
+      <div className="print-doc max-w-[794px] mx-auto bg-white screen-doc-shadow print:shadow-none">
 
         {/* ══════════════════════════════════════════════
             SECTION 1: HERO
         ══════════════════════════════════════════════ */}
-        <div className="hero-gradient text-white px-10 pt-8 pb-9 print:px-8 print:pt-7 print:pb-8">
+        <div className="hero-gradient text-white px-10 pt-8 pb-9 print:px-7 print:pt-6 print:pb-7">
 
           {/* Top bar: logo + date */}
           <div className="flex items-start justify-between mb-7">
@@ -340,17 +351,17 @@ export default function CalculationPrintPage() {
         {/* ══════════════════════════════════════════════
             SECTION 2: THE 3 PATHS
         ══════════════════════════════════════════════ */}
-        <div className="px-10 py-8 print:px-8 print:py-7">
-          <div className="flex items-center gap-2 mb-5">
+        <div className="px-10 py-7 print:px-7 print:py-5 avoid-break">
+          <div className="flex items-center gap-2 mb-4">
             <div className="h-0.5 w-5 bg-[#D7263D]" />
             <h2 className="text-xs font-bold uppercase tracking-widest text-[#0A1628]">Your 3 Savings Paths</h2>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 print:gap-3">
+          <div className="grid grid-cols-3 gap-3 print:gap-2.5">
             {scenarios.map((s) => (
               <div
                 key={s.number}
-                className={`rounded-xl p-5 print:p-4 relative ${s.best ? "scenario-best" : "scenario-normal"}`}
+                className={`rounded-xl p-4 print:p-3 relative avoid-break ${s.best ? "scenario-best" : "scenario-normal"}`}
               >
                 {/* Best badge */}
                 {s.best && (
@@ -393,7 +404,7 @@ export default function CalculationPrintPage() {
         {/* ══════════════════════════════════════════════
             SECTION 3: COMPARISON TABLE
         ══════════════════════════════════════════════ */}
-        <div className="px-10 pb-7 print:px-8 print:pb-6">
+        <div className="px-10 pb-6 print:px-7 print:pb-5 avoid-break">
           <div className="flex items-center gap-2 mb-4">
             <div className="h-0.5 w-5 bg-[#D7263D]" />
             <h2 className="text-xs font-bold uppercase tracking-widest text-[#0A1628]">Scenario Comparison</h2>
@@ -438,15 +449,15 @@ export default function CalculationPrintPage() {
         {/* ══════════════════════════════════════════════
             SECTION 4: CURRENT vs PROPOSED
         ══════════════════════════════════════════════ */}
-        <div className="px-10 pb-7 print:px-8 print:pb-6">
+        <div className="px-10 pb-6 print:px-7 print:pb-5 avoid-break">
           <div className="flex items-center gap-2 mb-4">
             <div className="h-0.5 w-5 bg-[#D7263D]" />
             <h2 className="text-xs font-bold uppercase tracking-widest text-[#0A1628]">Loan Details</h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 print:gap-3">
             {/* Current */}
-            <div className="rounded-xl border border-gray-200 p-5 print:p-4">
+            <div className="rounded-xl border border-gray-200 p-5 print:p-4 avoid-break">
               <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Current Loan</div>
               {[
                 { label: "Bank", value: currentBankName },
@@ -467,7 +478,7 @@ export default function CalculationPrintPage() {
             </div>
 
             {/* Proposed */}
-            <div className="rounded-xl border border-[#D7263D]/25 bg-[#D7263D]/4 p-5 print:p-4">
+            <div className="rounded-xl border border-[#D7263D]/25 bg-[#D7263D]/4 p-5 print:p-4 avoid-break">
               <div className="text-[10px] font-bold uppercase tracking-widest text-[#D7263D] mb-3">Proposed New Loan</div>
               {[
                 { label: "Bank", value: proposedBankName },
@@ -504,7 +515,7 @@ export default function CalculationPrintPage() {
         {/* ══════════════════════════════════════════════
             SECTION 5: NEXT STEPS + BRANDING
         ══════════════════════════════════════════════ */}
-        <div className="hero-gradient text-white px-10 py-8 print:px-8 print:py-7">
+        <div className="hero-gradient text-white px-10 py-8 print:px-7 print:py-6 avoid-break">
           <div className="text-xs font-bold uppercase tracking-widest text-white/70 mb-4">
             Ready to start saving?
           </div>
@@ -544,7 +555,7 @@ export default function CalculationPrintPage() {
         </div>
 
         {/* ── Footnotes ── */}
-        <div className="px-10 py-5 print:px-8 print:py-4 bg-gray-50 border-t border-gray-100">
+        <div className="px-10 py-4 print:px-7 print:py-3 bg-gray-50 border-t border-gray-100">
           {totalRefinancingCosts > 0 && (
             <p className="text-[9px] text-gray-400 mb-1.5">
               * Estimated refinancing costs: Legal fee {formatCurrency(legalFee)} + Valuation fee {formatCurrency(valuationFee)} + Stamp duty {formatCurrency(stampDuty)} = {formatCurrency(totalRefinancingCosts)} total.
@@ -560,6 +571,9 @@ export default function CalculationPrintPage() {
           </p>
         </div>
 
+      </div>
+
+      {/* close screen preview wrapper */}
       </div>
     </>
   )
