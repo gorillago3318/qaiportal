@@ -135,10 +135,18 @@ export async function POST(
     }
 
     if (caseNextStatus) {
+      // Fetch current case status for the from_status field
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: caseRow }: { data: any } = await adminClient
+        .from('cases').select('status').eq('id', id).single()
+      const fromStatus = caseRow?.status ?? null
+
       await adminClient.from('cases').update({ status: caseNextStatus }).eq('id', id)
       await adminClient.from('case_status_history').insert({
         case_id: id,
+        from_status: fromStatus,
         to_status: caseNextStatus,
+        changed_by: user.id,
         notes: caseNextStatus === 'payment_pending'
           ? 'Commission confirmed. Awaiting payment disbursement.'
           : 'Commission paid.',

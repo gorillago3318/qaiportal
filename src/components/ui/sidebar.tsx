@@ -25,8 +25,6 @@ import {
   FileImage,
 } from "lucide-react"
 
-// ── Types ──────────────────────────────────────────────────
-
 export interface NavItem {
   href: string
   label: string
@@ -41,10 +39,8 @@ interface SidebarProps {
   isSuperAdmin?: boolean
 }
 
-// ── Nav configs ─────────────────────────────────────────────
-
 const agentNavItems: NavItem[] = [
-  { href: "/agent/dashboard",    label: "Dashboard",   icon: LayoutDashboard },
+  { href: "/agent/dashboard",    label: "Dashboard",    icon: LayoutDashboard },
   { href: "/agent/calculations", label: "Calculations", icon: Calculator },
   { href: "/agent/cases",        label: "My Cases",     icon: FolderOpen },
   { href: "/agent/commissions",  label: "Commissions",  icon: DollarSign },
@@ -67,21 +63,18 @@ const adminNavItems: NavItem[] = [
   { href: "/admin/settings",    label: "Settings",     icon: Settings },
 ]
 
-// ── Logo ───────────────────────────────────────────────────
-
 function QuantifyLogo({ collapsed }: { collapsed: boolean }) {
   return (
     <div className={cn("flex items-center gap-2", collapsed ? "justify-center" : "")}>
-      {/* Icon mark */}
-      <div className="flex-shrink-0 h-8 w-8 rounded-xl bg-gradient-to-tr from-accent to-accent/70 shadow-glow flex items-center justify-center">
-        <span className="text-white font-heading font-bold text-sm">Q</span>
+      <div className="flex-shrink-0 h-8 w-8 rounded-xl bg-gradient-to-tr from-[#D7263D] to-[#D7263D]/70 shadow-[0_0_12px_rgba(215,38,61,0.35)] flex items-center justify-center">
+        <span className="text-white font-bold text-sm">Q</span>
       </div>
       {!collapsed && (
         <div className="leading-none">
-          <div className="font-heading font-bold text-foreground text-xl tracking-tight">
-            quantify<span className="text-accent text-vibrant-gradient">.</span>
+          <div className="font-bold text-[#111113] text-xl tracking-tight">
+            quantify<span className="text-[#D7263D]">.</span>
           </div>
-          <div className="text-muted-foreground text-[10px] uppercase tracking-widest font-medium">
+          <div className="text-[#7C7C85] text-[10px] uppercase tracking-widest font-medium">
             artificial intelligence
           </div>
         </div>
@@ -89,8 +82,6 @@ function QuantifyLogo({ collapsed }: { collapsed: boolean }) {
     </div>
   )
 }
-
-// ── Nav Item ───────────────────────────────────────────────
 
 function NavItemComp({
   item,
@@ -102,34 +93,25 @@ function NavItemComp({
   active: boolean
 }) {
   const Icon = item.icon
-
   return (
     <Link
       href={item.href}
       className={cn(
-        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300",
+        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
         collapsed ? "justify-center px-2" : "",
         active
-          ? "bg-[#D7263D]/12 text-[#B61F33] font-semibold shadow-sm"
-          : "text-[#5F5F67] hover:bg-[#111113]/6 hover:text-[#111113] hover:translate-x-1"
+          ? "bg-[#D7263D]/10 text-[#B61F33] font-semibold"
+          : "text-[#5F5F67] hover:bg-[#111113]/6 hover:text-[#111113] hover:translate-x-0.5"
       )}
       title={collapsed ? item.label : undefined}
     >
-      <Icon
-        className={cn(
-          "flex-shrink-0 h-5 w-5",
-          active ? "text-[#B61F33]" : "text-[#6A6A73] group-hover:text-[#111113]"
-        )}
-      />
-      {!collapsed && (
-        <span className="truncate">{item.label}</span>
-      )}
+      <Icon className={cn("flex-shrink-0 h-5 w-5 transition-colors",
+        active ? "text-[#B61F33]" : "text-[#6A6A73] group-hover:text-[#111113]"
+      )} />
+      {!collapsed && <span className="truncate">{item.label}</span>}
       {!collapsed && item.badge && item.badge > 0 && (
-        <span className={cn(
-          "ml-auto text-xs font-semibold px-1.5 py-0.5 rounded-full",
-          active
-            ? "bg-accent text-white"
-            : "bg-[#0066CC]/10 text-[#0066CC]"
+        <span className={cn("ml-auto text-xs font-semibold px-1.5 py-0.5 rounded-full",
+          active ? "bg-[#D7263D] text-white" : "bg-[#D7263D]/10 text-[#D7263D]"
         )}>
           {item.badge}
         </span>
@@ -138,27 +120,22 @@ function NavItemComp({
   )
 }
 
-// ── Main Sidebar ──────────────────────────────────────────
-
 export function Sidebar({ variant, collapsed = false, onCollapse, isSuperAdmin = false }: SidebarProps) {
   const pathname = usePathname()
   const baseAdminItems = isSuperAdmin
     ? [
         ...adminNavItems,
-        { href: "/admin/agencies",     label: "Agencies",      icon: Building2 },
+        { href: "/admin/agencies",      label: "Agencies",      icon: Building2 },
         { href: "/admin/convert-forms", label: "Convert Forms", icon: FileImage },
       ]
     : adminNavItems
   const navItems = variant === "agent" ? agentNavItems : baseAdminItems
 
   return (
-    <aside
-      className={cn(
-        "futuristic-shell flex flex-col h-full border-r border-border/40 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-20 relative shadow-[1px_0_24px_rgba(0,0,0,0.25)]",
-        collapsed ? "w-[5rem]" : "w-[17rem]"
-      )}
-    >
-      {/* Logo */}
+    <aside className={cn(
+      "futuristic-shell flex flex-col h-full border-r border-border/40 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-20 relative shadow-[1px_0_24px_rgba(0,0,0,0.06)]",
+      collapsed ? "w-[5rem]" : "w-[17rem]"
+    )}>
       <div className="flex items-center justify-between h-16 px-4 border-b border-border/50">
         <QuantifyLogo collapsed={collapsed} />
         {!collapsed && (
@@ -171,7 +148,6 @@ export function Sidebar({ variant, collapsed = false, onCollapse, isSuperAdmin =
         )}
       </div>
 
-      {/* Collapse toggle when collapsed */}
       {collapsed && (
         <button
           onClick={() => onCollapse?.(false)}
@@ -181,36 +157,27 @@ export function Sidebar({ variant, collapsed = false, onCollapse, isSuperAdmin =
         </button>
       )}
 
-      {/* Nav label */}
       {!collapsed && (
         <div className="px-4 pt-5 pb-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#7C7C85]">
             {variant === "agent" ? "Agent Portal" : "Admin Portal"}
           </p>
         </div>
       )}
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const active = pathname.startsWith(item.href)
-          return (
-            <NavItemComp
-              key={item.href}
-              item={item}
-              collapsed={collapsed}
-              active={active}
-            />
-          )
-        })}
+        {navItems.map((item) => (
+          <NavItemComp
+            key={item.href}
+            item={item}
+            collapsed={collapsed}
+            active={pathname.startsWith(item.href)}
+          />
+        ))}
       </nav>
 
-      {/* Bottom section */}
       <div className="border-t border-border/50 p-3">
-        <div className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-xl",
-          collapsed ? "justify-center" : ""
-        )}>
+        <div className={cn("flex items-center gap-3 px-3 py-2.5 rounded-xl", collapsed ? "justify-center" : "")}>
           <div className="flex-shrink-0 h-8 w-8 rounded-full bg-[#111113]/6 border border-[#111113]/10 flex items-center justify-center">
             <User className="h-4 w-4 text-[#111113]" />
           </div>
@@ -226,8 +193,6 @@ export function Sidebar({ variant, collapsed = false, onCollapse, isSuperAdmin =
   )
 }
 
-// ── Topbar ────────────────────────────────────────────────
-
 interface TopbarProps {
   title?: string
   onMenuClick?: () => void
@@ -235,60 +200,38 @@ interface TopbarProps {
   userEmail?: string
   unreadNotifications?: number
   onLogout?: () => void
-  /** Route for the notifications bell icon. Defaults to /agent/notifications. */
   notificationsHref?: string
 }
 
 export function Topbar({
-  title,
-  onMenuClick,
-  userName,
-  userEmail,
-  unreadNotifications = 0,
-  onLogout,
-  notificationsHref = '/agent/notifications',
+  title, onMenuClick, userName, userEmail,
+  unreadNotifications = 0, onLogout,
+  notificationsHref = "/agent/notifications",
 }: TopbarProps) {
   return (
     <header className="h-[4.5rem] bg-white/80 backdrop-blur-2xl sticky top-0 z-10 border-b border-border/40 flex items-center justify-between px-4 sm:px-8 flex-shrink-0">
       <div className="flex items-center gap-4">
         {onMenuClick && (
-          <button
-            onClick={onMenuClick}
-            className="lg:hidden p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors"
-          >
+          <button onClick={onMenuClick} className="lg:hidden p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors">
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
         )}
-        {title && (
-          <h1 className="font-heading font-semibold text-[#111113] text-lg hidden sm:block">
-            {title}
-          </h1>
-        )}
+        {title && <h1 className="font-bold text-[#111113] text-lg hidden sm:block">{title}</h1>}
       </div>
-
       <div className="flex items-center gap-3">
-        {/* Notifications */}
-        <Link
-          href={notificationsHref}
-          className="relative p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors"
-          aria-label="Notifications"
-        >
+        <Link href={notificationsHref} className="relative p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors" aria-label="Notifications">
           <Bell className="h-5 w-5" />
           {unreadNotifications > 0 && (
-            <span className="absolute top-1 right-1 h-4 w-4 flex items-center justify-center bg-[#FF3B30] text-white text-[10px] font-bold rounded-full">
+            <span className="absolute top-1 right-1 h-4 w-4 flex items-center justify-center bg-[#D7263D] text-white text-[10px] font-bold rounded-full">
               {unreadNotifications > 9 ? "9+" : unreadNotifications}
             </span>
           )}
         </Link>
-
-        {/* Divider */}
         <div className="h-6 w-px bg-[#111113]/12" />
-
-        {/* User info */}
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-[#111113] text-white flex items-center justify-center">
+          <div className="h-8 w-8 rounded-full bg-[#0A1628] text-white flex items-center justify-center">
             <span className="text-white text-xs font-semibold">
               {userName ? userName.charAt(0).toUpperCase() : "U"}
             </span>
@@ -298,14 +241,8 @@ export function Topbar({
             <p className="text-xs text-[#6A6A73] mt-0.5">{userEmail || ""}</p>
           </div>
         </div>
-
-        {/* Logout */}
         {onLogout && (
-          <button
-            onClick={onLogout}
-            className="p-2 rounded-lg text-[#6A6A73] hover:bg-[#D7263D]/10 hover:text-[#B61F33] transition-colors"
-            title="Sign out"
-          >
+          <button onClick={onLogout} className="p-2 rounded-lg text-[#6A6A73] hover:bg-[#D7263D]/10 hover:text-[#B61F33] transition-colors" title="Sign out">
             <LogOut className="h-4 w-4" />
           </button>
         )}
@@ -314,34 +251,13 @@ export function Topbar({
   )
 }
 
-// ── Mobile Overlay ──────────────────────────────────────────
-
-export function MobileSidebarOverlay({
-  open,
-  onClose,
-  children,
-}: {
-  open: boolean
-  onClose: () => void
-  children: React.ReactNode
+export function MobileSidebarOverlay({ open, onClose, children }: {
+  open: boolean; onClose: () => void; children: React.ReactNode
 }) {
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className={cn(
-          "fixed inset-0 z-40 bg-black/50 lg:hidden transition-opacity",
-          open ? "opacity-100" : "opacity-0 pointer-events-none"
-        )}
-        onClick={onClose}
-      />
-      {/* Drawer */}
-      <div
-        className={cn(
-          "fixed left-0 top-0 bottom-0 z-50 lg:hidden transition-transform duration-250",
-          open ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
+      <div className={cn("fixed inset-0 z-40 bg-black/50 lg:hidden transition-opacity", open ? "opacity-100" : "opacity-0 pointer-events-none")} onClick={onClose} />
+      <div className={cn("fixed left-0 top-0 bottom-0 z-50 lg:hidden transition-transform duration-250", open ? "translate-x-0" : "-translate-x-full")}>
         {children}
       </div>
     </>

@@ -392,21 +392,17 @@ export async function PATCH(
       }
     }
 
-    // Status history is handled by the DB trigger trg_cases_status_history which now
-    // has auth.uid() = user.id because we used the session client above.
-    // We additionally patch in the `notes` field on that trigger-created row so the
-    // activity timeline can show submission/transition messages.
+    // The DB trigger trg_cases_status_history was dropped (migration 022) because it used
+    // auth.uid() which returns NULL under the service role client. We insert the history
+    // row manually here instead.
     if (newStatus && newStatus !== currentCase.status) {
-      if (notes) {
-        // Update the most-recent history row for this transition to attach the note
-        await adminDb
-          .from('case_status_history')
-          .update({ notes })
-          .eq('case_id', id)
-          .eq('to_status', newStatus)
-          .order('created_at', { ascending: false })
-          .limit(1)
-      }
+      await adminDb.from('case_status_history').insert({
+        case_id: id,
+        from_status: currentCase.status,
+        to_status: newStatus,
+        changed_by: user.id,
+        notes: notes || null,
+      })
 
       // Notify Agent if Admin changed status
       if (isAdmin && currentCase.agent_id) {

@@ -579,6 +579,10 @@ export default function AdminCaseDetailPage() {
           {/* ── Application Details (editable by admin) ── */}
           {(() => {
             const bfd = caseData.bank_form_data || {}
+            // bv: safely coerce any bfd field to string (bfd values are `unknown`)
+            const bv = (k: string): string => String(bfd[k] ?? '')
+            // bb: safely coerce bfd field to boolean
+            const bb = (k: string): boolean => Boolean(bfd[k])
             const inp = (label: string, field: keyof typeof caseEditForm, type = 'text') => (
               <div key={field}>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
@@ -623,16 +627,16 @@ export default function AdminCaseDetailPage() {
                       </div>
                     ) : (
                       <div>
-                        {bfd.client_name && <InfoRow label="Full Name" value={String(bfd.client_name)} />}
-                        {bfd.client_ic && <InfoRow label="IC / Passport" value={String(bfd.client_ic)} />}
-                        {bfd.client_phone && <InfoRow label="Phone" value={String(bfd.client_phone)} />}
-                        {bfd.client_email && <InfoRow label="Email" value={String(bfd.client_email)} />}
+                        {bv('client_name') && <InfoRow label="Full Name" value={bv('client_name')} />}
+                        {bv('client_ic') && <InfoRow label="IC / Passport" value={bv('client_ic')} />}
+                        {bv('client_phone') && <InfoRow label="Phone" value={bv('client_phone')} />}
+                        {bv('client_email') && <InfoRow label="Email" value={bv('client_email')} />}
                       </div>
                     )}
                   </div>
 
                   {/* ── CO-BORROWER ── */}
-                  {(bfd.coborrower_name || editingCase) && (
+                  {(bv('coborrower_name') || editingCase) && (
                     <div>
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Co-Borrower</p>
                       {editingCase ? (
@@ -643,9 +647,9 @@ export default function AdminCaseDetailPage() {
                         </div>
                       ) : (
                         <div>
-                          {bfd.coborrower_name && <InfoRow label="Full Name" value={String(bfd.coborrower_name)} />}
-                          {bfd.coborrower_ic && <InfoRow label="IC / Passport" value={String(bfd.coborrower_ic)} />}
-                          {bfd.coborrower_phone && <InfoRow label="Phone" value={String(bfd.coborrower_phone)} />}
+                          {bv('coborrower_name') && <InfoRow label="Full Name" value={bv('coborrower_name')} />}
+                          {bv('coborrower_ic') && <InfoRow label="IC / Passport" value={bv('coborrower_ic')} />}
+                          {bv('coborrower_phone') && <InfoRow label="Phone" value={bv('coborrower_phone')} />}
                         </div>
                       )}
                     </div>
@@ -691,17 +695,17 @@ export default function AdminCaseDetailPage() {
                       </div>
                     ) : (
                       <div>
-                        <InfoRow label="Bank" value={caseData.proposed_bank?.name || (availableBanks.find(b => b.id === String(bfd.proposed_bank_id ?? ''))?.name) || null} />
-                        {bfd.home_loan_amount && <InfoRow label="Loan Amount" value={formatCurrency(parseFloat(String(bfd.home_loan_amount)))} />}
-                        {bfd.home_loan_tenure && <InfoRow label="Tenure" value={`${bfd.home_loan_tenure} years`} />}
-                        {bfd.cashout_amount && parseFloat(String(bfd.cashout_amount)) > 0 && (
-                          <InfoRow label="Cash Out" value={formatCurrency(parseFloat(String(bfd.cashout_amount)))} />
+                        <InfoRow label="Bank" value={caseData.proposed_bank?.name || (availableBanks.find(b => b.id === bv('proposed_bank_id'))?.name) || null} />
+                        {bv('home_loan_amount') && <InfoRow label="Loan Amount" value={formatCurrency(parseFloat(bv('home_loan_amount')))} />}
+                        {bv('home_loan_tenure') && <InfoRow label="Tenure" value={`${bv('home_loan_tenure')} years`} />}
+                        {bv('cashout_amount') && parseFloat(bv('cashout_amount')) > 0 && (
+                          <InfoRow label="Cash Out" value={formatCurrency(parseFloat(bv('cashout_amount')))} />
                         )}
-                        {bfd.finance_legal_cost && (
-                          <InfoRow label="Finance Legal Fees" value={`Yes${bfd.legal_cost_amount ? ` — ${formatCurrency(parseFloat(String(bfd.legal_cost_amount)))}` : ''}`} />
+                        {bb('finance_legal_cost') && (
+                          <InfoRow label="Finance Legal Fees" value={`Yes${bv('legal_cost_amount') ? ` — ${formatCurrency(parseFloat(bv('legal_cost_amount')))}` : ''}`} />
                         )}
-                        {bfd.finance_valuation_cost && (
-                          <InfoRow label="Finance Valuation Fees" value={`Yes${bfd.valuation_cost_amount ? ` — ${formatCurrency(parseFloat(String(bfd.valuation_cost_amount)))}` : ''}`} />
+                        {bb('finance_valuation_cost') && (
+                          <InfoRow label="Finance Valuation Fees" value={`Yes${bv('valuation_cost_amount') ? ` — ${formatCurrency(parseFloat(bv('valuation_cost_amount')))}` : ''}`} />
                         )}
                       </div>
                     )}

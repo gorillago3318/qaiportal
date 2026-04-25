@@ -66,7 +66,9 @@ export default function AdminCommissionsPage() {
   React.useEffect(() => { fetchCommissions() }, [fetchCommissions])
 
   const totalGross = commissions.reduce((s, c) => s + (c.gross_amount || 0), 0)
-  const totalPaid = commissions.filter((c) => c.status === "paid").reduce((s, c) => s + (c.paid_amount || c.net_distributable || 0), 0)
+  // Use net_distributable (not paid_amount) — paid_amount had a bug where it was set to the
+  // sum of all rows in the case, causing double-counting when multiple commission types exist.
+  const totalPaid = commissions.filter((c) => c.status === "paid").reduce((s, c) => s + (c.net_distributable || 0), 0)
   const totalPending = commissions.filter((c) => c.status === "payment_pending").reduce((s, c) => s + (c.net_distributable || 0), 0)
 
   const handleMarkPaid = async () => {

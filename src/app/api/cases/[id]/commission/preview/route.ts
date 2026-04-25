@@ -92,15 +92,9 @@ export async function GET(
 
     // ── Calculate (preview only — no save) ──
     const bankResult = await calculateBankCommission({
-      caseId: id,
       caseAgentId: caseData.agent_id,
-      agencyId: caseData.agency_id,
       bankGross,
-      adminOverride: bankDiscount,
-      panelLawyerConfirmed,
       adminClient,
-      configMap,
-      superAdminId,
     })
 
     let lawyerResult = null
@@ -109,6 +103,7 @@ export async function GET(
         caseId: id,
         caseAgentId: caseData.agent_id,
         professionalFee,
+        panelLawyerConfirmed,
         adminClient,
         configMap,
         superAdminId,
@@ -120,17 +115,12 @@ export async function GET(
         gross: bankResult.gross,
         deductions: {
           flat: bankResult.flatDeduction,
-          panel_loan_agr: bankResult.panelDeduction,
-          admin_override: bankResult.adminOverride,
-          total: bankResult.flatDeduction + bankResult.panelDeduction + bankResult.adminOverride,
+          total: bankResult.flatDeduction,
         },
         net_distributable: bankResult.netDistributable,
-        co_broke: bankResult.coBroke.hasCoBroke ? {
-          referrer_agent_id: bankResult.coBroke.referrerAgentId,
-          referrer_amount: bankResult.coBroke.referrerAmount,
-          doer_pool: bankResult.coBroke.doerPool,
-        } : null,
-        tier_breakdown: Object.values(bankResult.tierBreakdown.breakdown),
+        rows: Object.entries(bankResult.tierBreakdown.breakdown).map(([uid, e]) => ({
+          id: uid, name: e.name, role: e.role, percentage: e.percentage, amount: e.amount,
+        })),
       },
       lawyer: lawyerResult ? {
         gross: lawyerResult.gross,

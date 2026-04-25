@@ -2003,7 +2003,15 @@ function ResultsPanel({
         )}
         <Button
           variant="outline"
-          onClick={() => toast.info("PDF generation coming soon")}
+          onClick={() => {
+            if (!savedId) {
+              toast.info("Save the calculation first, then generate the PDF report.")
+            } else {
+              window.open(`/agent/calculations/${savedId}/print`, "_blank")
+            }
+          }}
+          disabled={state.loanType !== "refinance"}
+          title={state.loanType !== "refinance" ? "PDF report only available for Refinance" : undefined}
         >
           <FileText className="h-4 w-4" />
           Generate PDF Report

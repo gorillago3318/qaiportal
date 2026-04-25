@@ -997,7 +997,7 @@ function NewCasePageInner() {
             setSavedCaseData(data)
             router.replace(`/agent/cases/new?id=${newId}`)
             if (calculationId) {
-              await supabase.from('calculations').update({ case_id: newId }).eq('id', calculationId)
+              await supabase.from('calculations').update({ converted_to_case_id: newId }).eq('id', calculationId)
             }
             setAutoSaveStatus('saved')
             setTimeout(() => setAutoSaveStatus('idle'), 3000)
@@ -1158,7 +1158,7 @@ function NewCasePageInner() {
         // Update URL so refreshing/Back keeps this draft
         router.replace(`/agent/cases/new?id=${newId}`)
         if (calculationId) {
-          await supabase.from('calculations').update({ case_id: newId }).eq('id', calculationId)
+          await supabase.from('calculations').update({ converted_to_case_id: newId }).eq('id', calculationId)
         }
         toast.success('Draft saved! Fill in remaining details, then Render to PDF and Submit.')
       }
@@ -1229,7 +1229,7 @@ function NewCasePageInner() {
         }
         const { data } = await res.json()
         if (calculationId && data?.id) {
-          await supabase.from('calculations').update({ case_id: data.id }).eq('id', calculationId)
+          await supabase.from('calculations').update({ converted_to_case_id: data.id }).eq('id', calculationId)
         }
       }
 

@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   ArrowLeft, Pencil, Check, X, ArrowRight,
   TrendingDown, Building2, Calendar, User, Phone,
-  Loader2, AlertTriangle,
+  Loader2, AlertTriangle, FileText,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -547,6 +547,15 @@ export default function CalculationDetailPage() {
           <Button variant="outline" size="sm" onClick={startEdit}>
             <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
           </Button>
+          {calc.loan_type === "refinance" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(`/agent/calculations/${calc.id}/print`, "_blank")}
+            >
+              <FileText className="h-3.5 w-3.5 mr-1.5" /> PDF Report
+            </Button>
+          )}
           {!calc.converted_to_case_id && (
             <Button size="sm" className="bg-[#0A1628] text-white hover:bg-[#0d1f38]" asChild>
               <Link href={`/agent/cases/new?from_calculation=${calc.id}`}>
