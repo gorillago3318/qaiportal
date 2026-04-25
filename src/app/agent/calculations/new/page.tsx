@@ -426,7 +426,7 @@ function NewCalculationWizard() {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
-  async function handleSave() {
+  async function handleSave(): Promise<string | null> {
     setSaving(true)
     try {
       const currentTenureMonths =
@@ -472,6 +472,7 @@ function NewCalculationWizard() {
           throw new Error(err.error || "Failed to save")
         }
         toast.success("Calculation saved!")
+        return savedId
       } else {
         const response = await fetch("/api/calculations", {
           method: "POST",
@@ -485,10 +486,12 @@ function NewCalculationWizard() {
         const data = await response.json()
         setSavedId(data.id)
         toast.success("Calculation saved successfully!")
+        return data.id as string
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save calculation"
       toast.error(message)
+      return null
     } finally {
       setSaving(false)
     }
@@ -1752,9 +1755,10 @@ function ResultsPanel({
   results: RefinanceResults
   savedId: string | null
   saving: boolean
-  onSave: () => void
+  onSave: () => Promise<string | null>
 }) {
   const router = useRouter()
+  const [pdfLoading, setPdfLoading] = React.useState(false)
   const isRefinance = state.loanType === "refinance"
   const currentTenureMonths =
     (state.currentTenureYears ?? 0) * 12 + (state.currentTenureMonths ?? 0)
@@ -2001,21 +2005,24 @@ function ResultsPanel({
             Saved
           </Button>
         )}
-        <Button
-          variant="outline"
-          onClick={() => {
-            if (!savedId) {
-              toast.info("Save the calculation first, then generate the PDF report.")
-            } else {
-              window.open(`/agent/calculations/${savedId}/print`, "_blank")
-            }
-          }}
-          disabled={state.loanType !== "refinance"}
-          title={state.loanType !== "refinance" ? "PDF report only available for Refinance" : undefined}
-        >
-          <FileText className="h-4 w-4" />
-          Generate PDF Report
-        </Button>
+        {isRefinance && (
+          <Button
+            variant="outline"
+            disabled={pdfLoading || saving}
+            onClick={async () => {
+              setPdfLoading(true)
+              try {
+                const id = savedId ?? await onSave()
+                if (id) window.open(`/agent/calculations/${id}/print`, "_blank")
+              } finally {
+                setPdfLoading(false)
+              }
+            }}
+          >
+            <FileText className="h-4 w-4" />
+            {pdfLoading ? "Saving…" : "Print PDF Report"}
+          </Button>
+        )}
         {savedId && (
           <Button
             variant="default"

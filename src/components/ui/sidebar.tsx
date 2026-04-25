@@ -209,40 +209,40 @@ export function Topbar({
   notificationsHref = "/agent/notifications",
 }: TopbarProps) {
   return (
-    <header className="h-[4.5rem] bg-white/80 backdrop-blur-2xl sticky top-0 z-10 border-b border-border/40 flex items-center justify-between px-4 sm:px-8 flex-shrink-0">
-      <div className="flex items-center gap-4">
+    <header className="h-14 sm:h-[4.5rem] bg-white/80 backdrop-blur-2xl sticky top-0 z-10 border-b border-border/40 flex items-center justify-between px-3 sm:px-6 flex-shrink-0">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
         {onMenuClick && (
-          <button onClick={onMenuClick} className="lg:hidden p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors">
+          <button onClick={onMenuClick} className="lg:hidden flex-shrink-0 p-1.5 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors">
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
         )}
-        {title && <h1 className="font-bold text-[#111113] text-lg hidden sm:block">{title}</h1>}
+        {title && <h1 className="font-bold text-[#111113] text-base sm:text-lg hidden sm:block truncate">{title}</h1>}
       </div>
-      <div className="flex items-center gap-3">
-        <Link href={notificationsHref} className="relative p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors" aria-label="Notifications">
-          <Bell className="h-5 w-5" />
+      <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+        <Link href={notificationsHref} className="relative p-1.5 sm:p-2 rounded-lg text-[#6A6A73] hover:bg-[#111113]/8 hover:text-[#111113] transition-colors" aria-label="Notifications">
+          <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
           {unreadNotifications > 0 && (
-            <span className="absolute top-1 right-1 h-4 w-4 flex items-center justify-center bg-[#D7263D] text-white text-[10px] font-bold rounded-full">
+            <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 h-3.5 w-3.5 sm:h-4 sm:w-4 flex items-center justify-center bg-[#D7263D] text-white text-[9px] sm:text-[10px] font-bold rounded-full">
               {unreadNotifications > 9 ? "9+" : unreadNotifications}
             </span>
           )}
         </Link>
-        <div className="h-6 w-px bg-[#111113]/12" />
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-[#0A1628] text-white flex items-center justify-center">
+        <div className="h-5 w-px bg-[#111113]/12" />
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-[#0A1628] text-white flex items-center justify-center flex-shrink-0">
             <span className="text-white text-xs font-semibold">
               {userName ? userName.charAt(0).toUpperCase() : "U"}
             </span>
           </div>
-          <div className="hidden md:block">
-            <p className="text-sm font-medium text-[#111113] leading-none">{userName || "User"}</p>
-            <p className="text-xs text-[#6A6A73] mt-0.5">{userEmail || ""}</p>
+          <div className="hidden md:block max-w-[140px]">
+            <p className="text-sm font-medium text-[#111113] leading-none truncate">{userName || "User"}</p>
+            <p className="text-xs text-[#6A6A73] mt-0.5 truncate">{userEmail || ""}</p>
           </div>
         </div>
         {onLogout && (
-          <button onClick={onLogout} className="p-2 rounded-lg text-[#6A6A73] hover:bg-[#D7263D]/10 hover:text-[#B61F33] transition-colors" title="Sign out">
+          <button onClick={onLogout} className="p-1.5 sm:p-2 rounded-lg text-[#6A6A73] hover:bg-[#D7263D]/10 hover:text-[#B61F33] transition-colors" title="Sign out">
             <LogOut className="h-4 w-4" />
           </button>
         )}

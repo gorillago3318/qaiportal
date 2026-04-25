@@ -505,9 +505,11 @@ export default function AgentDashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-10 px-3.5 rounded-xl border border-[#D8D8DE] bg-[#f6f6f7] text-sm text-[#5F5F67] font-mono flex items-center truncate select-all">
-                {typeof window !== 'undefined' ? `${window.location.origin}/calculate?ref=${profile.agent_code}` : `/calculate?ref=${profile.agent_code}`}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex-1 h-10 px-3.5 rounded-xl border border-[#D8D8DE] bg-[#f6f6f7] text-sm text-[#5F5F67] font-mono flex items-center overflow-hidden select-all min-w-0">
+                <span className="truncate">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/calculate?ref=${profile.agent_code}` : `/calculate?ref=${profile.agent_code}`}
+                </span>
               </div>
               <button
                 onClick={() => {
@@ -518,13 +520,13 @@ export default function AgentDashboardPage() {
                   }
                 }}
                 className={cn(
-                  "h-10 px-4 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-all flex-shrink-0",
+                  "h-10 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-all flex-shrink-0",
                   copied
                     ? "bg-green-50 text-green-700 border border-green-200"
                     : "bg-[#D7263D] text-white hover:bg-[#B61F33] shadow-[0_2px_8px_rgba(215,38,61,0.25)]"
                 )}
               >
-                {copied ? <><CheckCheck className="h-3.5 w-3.5" /> Copied!</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                {copied ? <><CheckCheck className="h-3.5 w-3.5" /> Copied!</> : <><Copy className="h-3.5 w-3.5" /> Copy Link</>}
               </button>
             </div>
             <p className="text-xs text-[#7C7C85]">
