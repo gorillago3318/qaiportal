@@ -475,8 +475,8 @@ export default function AdminCaseDetailPage() {
     return (
       <div className="space-y-6 animate-pulse max-w-7xl">
         <div className="h-8 w-64 bg-gray-100 rounded" />
-        <div className="grid grid-cols-3 gap-6">
-          <div className="col-span-2 space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
             <div className="h-48 bg-gray-100 rounded-2xl" />
             <div className="h-48 bg-gray-100 rounded-2xl" />
           </div>
@@ -619,7 +619,7 @@ export default function AdminCaseDetailPage() {
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Main Borrower</p>
                     {editingCase ? (
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {inp('Full Name', 'client_name')}
                         {inp('IC / Passport No.', 'client_ic')}
                         {inp('Phone', 'client_phone')}
@@ -640,7 +640,7 @@ export default function AdminCaseDetailPage() {
                     <div>
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Co-Borrower</p>
                       {editingCase ? (
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {inp('Full Name', 'coborrower_name')}
                           {inp('IC / Passport No.', 'coborrower_ic')}
                           {inp('Phone', 'coborrower_phone')}
@@ -671,7 +671,7 @@ export default function AdminCaseDetailPage() {
                             {availableBanks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                           </select>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {inp('Loan Amount (RM)', 'home_loan_amount', 'number')}
                           {inp('Tenure (years)', 'home_loan_tenure', 'number')}
                           {inp('Cash Out (RM)', 'cashout_amount', 'number')}
@@ -743,13 +743,13 @@ export default function AdminCaseDetailPage() {
                           </div>
                         )}
                         {caseEditForm.selected_lawyer_type === 'others' && (
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {inp('Lawyer Name', 'lawyer_name_other')}
                             {inp('Firm / Company', 'lawyer_firm_other')}
                           </div>
                         )}
                         {caseEditForm.selected_lawyer_type && (
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {inp('Professional Fee (RM)', 'lawyer_professional_fee', 'number')}
                             {inp('Special Discount (RM)', 'special_arrangement_discount', 'number')}
                           </div>
@@ -864,7 +864,7 @@ export default function AdminCaseDetailPage() {
             <CardContent className="space-y-6">
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-[#0A1628]">Valuer 1 (Required)</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <input type="text" placeholder="Firm Name" value={valuationData.valuer_1_firm} onChange={e => setValuationData(d => ({ ...d, valuer_1_firm: e.target.value }))} className="w-full text-sm h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
                   <input type="text" placeholder="Valuer Name" value={valuationData.valuer_1_name} onChange={e => setValuationData(d => ({ ...d, valuer_1_name: e.target.value }))} className="w-full text-sm h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
                   <input type="date" value={valuationData.valuer_1_date} onChange={e => setValuationData(d => ({ ...d, valuer_1_date: e.target.value }))} className="w-full text-sm h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
@@ -874,7 +874,7 @@ export default function AdminCaseDetailPage() {
               
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-[#0A1628]">Valuer 2 (Optional)</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <input type="text" placeholder="Firm Name" value={valuationData.valuer_2_firm} onChange={e => setValuationData(d => ({ ...d, valuer_2_firm: e.target.value }))} className="w-full text-sm h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
                   <input type="text" placeholder="Valuer Name" value={valuationData.valuer_2_name} onChange={e => setValuationData(d => ({ ...d, valuer_2_name: e.target.value }))} className="w-full text-sm h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
                   <input type="date" value={valuationData.valuer_2_date} onChange={e => setValuationData(d => ({ ...d, valuer_2_date: e.target.value }))} className="w-full text-sm h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C9A84C]" />
@@ -951,7 +951,7 @@ export default function AdminCaseDetailPage() {
                 {/* ── BANK COMMISSION ── */}
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide border-b pb-1">Bank Commission</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">
                         Bank Gross (RM) <span className="text-gray-400 font-normal">— loan × rate</span>

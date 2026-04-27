@@ -23,6 +23,7 @@ import {
   BarChart2,
   Globe,
   FileImage,
+  ShieldAlert,
 } from "lucide-react"
 
 export interface NavItem {
@@ -41,8 +42,8 @@ interface SidebarProps {
 
 const agentNavItems: NavItem[] = [
   { href: "/agent/dashboard",    label: "Dashboard",    icon: LayoutDashboard },
-  { href: "/agent/calculations", label: "Calculations", icon: Calculator },
   { href: "/agent/cases",        label: "My Cases",     icon: FolderOpen },
+  { href: "/agent/calculations", label: "Calculations", icon: Calculator },
   { href: "/agent/commissions",  label: "Commissions",  icon: DollarSign },
   { href: "/agent/network",      label: "Network",      icon: GitBranch },
   { href: "/agent/resources",    label: "Resources",    icon: BookOpen },
@@ -127,13 +128,14 @@ export function Sidebar({ variant, collapsed = false, onCollapse, isSuperAdmin =
         ...adminNavItems,
         { href: "/admin/agencies",      label: "Agencies",      icon: Building2 },
         { href: "/admin/convert-forms", label: "Convert Forms", icon: FileImage },
+        { href: "/admin/audit-log",     label: "Audit Log",     icon: ShieldAlert },
       ]
     : adminNavItems
   const navItems = variant === "agent" ? agentNavItems : baseAdminItems
 
   return (
     <aside className={cn(
-      "futuristic-shell flex flex-col h-full border-r border-border/40 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-20 relative shadow-[1px_0_24px_rgba(0,0,0,0.06)]",
+      "futuristic-shell flex flex-col h-full border-r border-border/40 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-20 relative shadow-[1px_0_24px_rgba(0,0,0,0.06)] min-h-0",
       collapsed ? "w-[5rem]" : "w-[17rem]"
     )}>
       <div className="flex items-center justify-between h-16 px-4 border-b border-border/50">
@@ -257,7 +259,7 @@ export function MobileSidebarOverlay({ open, onClose, children }: {
   return (
     <>
       <div className={cn("fixed inset-0 z-40 bg-black/50 lg:hidden transition-opacity", open ? "opacity-100" : "opacity-0 pointer-events-none")} onClick={onClose} />
-      <div className={cn("fixed left-0 top-0 bottom-0 z-50 lg:hidden transition-transform duration-250", open ? "translate-x-0" : "-translate-x-full")}>
+      <div className={cn("fixed left-0 top-0 bottom-0 z-50 lg:hidden transition-transform duration-250 max-w-[85vw]", open ? "translate-x-0" : "-translate-x-full")}>
         {children}
       </div>
     </>

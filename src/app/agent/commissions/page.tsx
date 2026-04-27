@@ -187,7 +187,7 @@ export default function AgentCommissionsPage() {
               <p className="text-[#6B7280] text-sm max-w-xs">Commissions will appear here when your cases are approved.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[460px]">
                 <thead>
                   <tr className="border-b border-[#F3F4F6] bg-[#F9FAFB]">

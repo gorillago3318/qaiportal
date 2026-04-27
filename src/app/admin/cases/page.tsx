@@ -205,7 +205,7 @@ export default function AdminCasesPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[480px]">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">

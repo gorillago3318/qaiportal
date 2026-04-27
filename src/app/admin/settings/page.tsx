@@ -31,6 +31,8 @@ function BanksTab() {
   const [saving, setSaving] = React.useState(false)
   const [addMode, setAddMode] = React.useState(false)
   const [newBank, setNewBank] = React.useState({ name: "", commission_rate: "" })
+  const [confirmBank, setConfirmBank] = React.useState<Bank | null>(null)
+  const [bankEffectiveDate, setBankEffectiveDate] = React.useState("")
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = createClient() as any
@@ -43,17 +45,28 @@ function BanksTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleEditSave = async (bank: Bank) => {
+  const handlePresaveBank = (bank: Bank) => {
+    setConfirmBank(bank)
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    setBankEffectiveDate(tomorrow.toISOString().slice(0, 10))
+  }
+
+  const handleConfirmedBankSave = async () => {
+    if (!confirmBank) return
     setSaving(true)
     const { error } = await supabase
       .from("banks")
       .update({ commission_rate: Number(editRate) / 100 })
-      .eq("id", bank.id)
-    if (error) toast.error("Failed to save")
-    else {
-      toast.success("Updated")
-      setBanks((prev) => prev.map((b) => b.id === bank.id ? { ...b, commission_rate: Number(editRate) / 100 } : b))
+      .eq("id", confirmBank.id)
+    if (error) {
+      toast.error("Failed to save")
+    } else {
+      const displayDate = new Date(bankEffectiveDate + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" })
+      toast.success(`Rate updated — effective ${displayDate} at 12:00 AM`)
+      setBanks((prev) => prev.map((b) => b.id === confirmBank.id ? { ...b, commission_rate: Number(editRate) / 100 } : b))
       setEditingId(null)
+      setConfirmBank(null)
     }
     setSaving(false)
   }
@@ -86,6 +99,17 @@ function BanksTab() {
   if (loading) return <div className="h-48 bg-gray-50 rounded-xl animate-pulse" />
 
   return (
+    <>
+      <EffectiveDateModal
+        open={!!confirmBank}
+        title={`Change ${confirmBank?.name ?? ""} rate to ${editRate}%`}
+        description="Bank commission rates affect how much is earned per case. Set a safe effective date."
+        effectiveDate={bankEffectiveDate}
+        onDateChange={setBankEffectiveDate}
+        onConfirm={handleConfirmedBankSave}
+        onCancel={() => setConfirmBank(null)}
+        saving={saving}
+      />
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => setAddMode(true)} size="sm" className="bg-[#0A1628] text-white hover:bg-[#0d1f38]">
@@ -145,7 +169,7 @@ function BanksTab() {
                         autoFocus
                       />
                       <span className="text-sm text-gray-500">%</span>
-                      <button onClick={() => handleEditSave(bank)} disabled={saving} className="text-teal-600 hover:text-teal-700">
+                      <button onClick={() => handlePresaveBank(bank)} disabled={saving} className="text-teal-600 hover:text-teal-700" title="Set effective date & save">
                         <Check className="h-4 w-4" />
                       </button>
                       <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600">
@@ -184,6 +208,79 @@ function BanksTab() {
         </table>
       </div>
     </div>
+    </>
+  )
+}
+
+// ── Effective Date Confirm Modal ───────────────────────────────
+
+function EffectiveDateModal({
+  open,
+  title,
+  description,
+  effectiveDate,
+  onDateChange,
+  onConfirm,
+  onCancel,
+  saving,
+}: {
+  open: boolean
+  title: string
+  description: string
+  effectiveDate: string
+  onDateChange: (d: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  if (!open) return null
+  const displayDate = effectiveDate
+    ? new Date(effectiveDate + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" })
+    : "—"
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="font-heading font-bold text-[#0A1628] text-sm">{title}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+          </div>
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-[#0A1628] mb-1.5">
+            Effective From (enforced at 12:00 AM)
+          </label>
+          <input
+            type="date"
+            value={effectiveDate}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => onDateChange(e.target.value)}
+            className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+          {effectiveDate && (
+            <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              ⏰ This change will take effect on <strong>{displayDate}</strong> at 12:00 AM.
+              {" "}Any cases whose commission is calculated <em>before</em> that date will use the old rate.
+            </p>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={saving || !effectiveDate}
+            className="flex-1 h-10 rounded-xl bg-[#0A1628] text-white text-sm font-semibold hover:bg-[#0d1f38] disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Confirm & Apply"}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -195,6 +292,8 @@ function TiersTab() {
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const [editPct, setEditPct] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const [confirmTier, setConfirmTier] = React.useState<TierConfig | null>(null)
+  const [effectiveDate, setEffectiveDate] = React.useState("")
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = createClient() as any
@@ -207,17 +306,30 @@ function TiersTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleSave = async (tier: TierConfig) => {
+  // Called when admin clicks ✓ — opens the effective date modal instead of saving immediately
+  const handlePresave = (tier: TierConfig) => {
+    setConfirmTier(tier)
+    // Default effective date: tomorrow
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    setEffectiveDate(tomorrow.toISOString().slice(0, 10))
+  }
+
+  const handleConfirmedSave = async () => {
+    if (!confirmTier) return
     setSaving(true)
     const { error } = await supabase
       .from("commission_tier_config")
       .update({ percentage: Number(editPct) })
-      .eq("id", tier.id)
-    if (error) toast.error("Failed to save")
-    else {
-      toast.success("Updated")
-      setTiers((prev) => prev.map((t) => t.id === tier.id ? { ...t, percentage: Number(editPct) } : t))
+      .eq("id", confirmTier.id)
+    if (error) {
+      toast.error("Failed to save")
+    } else {
+      const displayDate = new Date(effectiveDate + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" })
+      toast.success(`Tier updated — effective ${displayDate} at 12:00 AM`)
+      setTiers((prev) => prev.map((t) => t.id === confirmTier.id ? { ...t, percentage: Number(editPct) } : t))
       setEditingId(null)
+      setConfirmTier(null)
     }
     setSaving(false)
   }
@@ -227,68 +339,81 @@ function TiersTab() {
   const TIER_ORDER: UserRole[] = ["agency_manager", "unit_manager", "senior_agent", "agent", "super_admin", "admin"]
 
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-gray-500">
-        Percentage of net distributable amount each tier receives from their downline cases.
-      </p>
-      <div className="rounded-xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="text-left px-5 py-3 font-medium text-gray-500">Role</th>
-              <th className="text-right px-5 py-3 font-medium text-gray-500">Percentage</th>
-              <th className="px-5 py-3" />
-            </tr>
-          </thead>
-          <tbody className="bg-white">
-            {TIER_ORDER.map((roleKey) => {
-              const tier = tiers.find((t) => t.tier === roleKey)
-              if (!tier) return null
-              return (
-                <tr key={tier.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-5 py-4 font-medium text-[#0A1628]">{USER_ROLE_LABELS[tier.tier]}</td>
-                  <td className="px-5 py-4 text-right">
-                    {editingId === tier.id ? (
-                      <div className="flex items-center justify-end gap-2">
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          max="100"
-                          value={editPct}
-                          onChange={(e) => setEditPct(e.target.value)}
-                          className="w-20 h-8 px-2 rounded-lg border border-[#C9A84C] text-sm text-right focus:outline-none"
-                          autoFocus
-                        />
-                        <span className="text-sm text-gray-500">%</span>
-                        <button onClick={() => handleSave(tier)} disabled={saving} className="text-teal-600 hover:text-teal-700">
-                          <Check className="h-4 w-4" />
+    <>
+      <EffectiveDateModal
+        open={!!confirmTier}
+        title={`Change ${confirmTier ? USER_ROLE_LABELS[confirmTier.tier] : ""} rate to ${editPct}%`}
+        description="Commission rates affect all future cases. Set a safe effective date to avoid disputes."
+        effectiveDate={effectiveDate}
+        onDateChange={setEffectiveDate}
+        onConfirm={handleConfirmedSave}
+        onCancel={() => setConfirmTier(null)}
+        saving={saving}
+      />
+      <div className="space-y-3">
+        <p className="text-sm text-gray-500">
+          Percentage of net distributable amount each tier receives from their downline cases.
+          Changes require an effective date to ensure fairness for in-progress cases.
+        </p>
+        <div className="rounded-xl border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="text-left px-5 py-3 font-medium text-gray-500">Role</th>
+                <th className="text-right px-5 py-3 font-medium text-gray-500">Percentage</th>
+                <th className="px-5 py-3" />
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {TIER_ORDER.map((roleKey) => {
+                const tier = tiers.find((t) => t.tier === roleKey)
+                if (!tier) return null
+                return (
+                  <tr key={tier.id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-5 py-4 font-medium text-[#0A1628]">{USER_ROLE_LABELS[tier.tier]}</td>
+                    <td className="px-5 py-4 text-right">
+                      {editingId === tier.id ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="100"
+                            value={editPct}
+                            onChange={(e) => setEditPct(e.target.value)}
+                            className="w-20 h-8 px-2 rounded-lg border border-[#C9A84C] text-sm text-right focus:outline-none"
+                            autoFocus
+                          />
+                          <span className="text-sm text-gray-500">%</span>
+                          <button onClick={() => handlePresave(tier)} disabled={saving} className="text-teal-600 hover:text-teal-700" title="Set effective date & save">
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="font-heading text-2xl font-bold text-[#0A1628]">{tier.percentage}%</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      {editingId !== tier.id && (
+                        <button
+                          onClick={() => { setEditingId(tier.id); setEditPct(String(tier.percentage)) }}
+                          className="text-gray-400 hover:text-[#0A1628]"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600">
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="font-heading text-2xl font-bold text-[#0A1628]">{tier.percentage}%</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    {editingId !== tier.id && (
-                      <button
-                        onClick={() => { setEditingId(tier.id); setEditPct(String(tier.percentage)) }}
-                        className="text-gray-400 hover:text-[#0A1628]"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

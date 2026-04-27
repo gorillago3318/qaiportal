@@ -9,6 +9,8 @@ import {
   Topbar,
   MobileSidebarOverlay,
 } from "@/components/ui/sidebar"
+import { useInactivityLogout } from "@/hooks/useInactivityLogout"
+import { useSessionGuard } from "@/hooks/useSessionGuard"
 
 export default function AgentLayout({
   children,
@@ -20,6 +22,9 @@ export default function AgentLayout({
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [userName, setUserName] = React.useState<string>("")
   const [userEmail, setUserEmail] = React.useState<string>("")
+
+  useInactivityLogout('/login')
+  useSessionGuard('/login')
 
   React.useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

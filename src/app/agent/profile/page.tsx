@@ -84,8 +84,8 @@ export default function AgentProfilePage() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-heading text-white">Profile Settings</h1>
-        <p className="text-sm text-zinc-300 mt-1">Manage your account and payment details</p>
+        <h1 className="text-2xl font-bold font-heading text-[#111113]">Profile Settings</h1>
+        <p className="text-sm text-[#5F5F67] mt-1">Manage your account and payment details</p>
       </div>
 
       <Card>
@@ -94,22 +94,22 @@ export default function AgentProfilePage() {
           <CardDescription>Your basic QuantifyAI agent info cannot be changed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-zinc-300 font-medium">Full Name</label>
-              <div className="text-sm font-medium">{profile?.full_name}</div>
+              <label className="text-xs text-[#6A6A73] font-medium">Full Name</label>
+              <div className="text-sm font-medium text-[#111113] mt-0.5">{profile?.full_name}</div>
             </div>
             <div>
-              <label className="text-xs text-zinc-300 font-medium">Email</label>
-              <div className="text-sm font-medium">{profile?.email}</div>
+              <label className="text-xs text-[#6A6A73] font-medium">Email</label>
+              <div className="text-sm font-medium text-[#111113] mt-0.5">{profile?.email}</div>
             </div>
             <div>
-              <label className="text-xs text-zinc-300 font-medium">Agent Code</label>
-              <div className="text-sm font-medium">{profile?.agent_code || '—'}</div>
+              <label className="text-xs text-[#6A6A73] font-medium">Agent Code</label>
+              <div className="text-sm font-medium text-[#111113] mt-0.5">{profile?.agent_code || '—'}</div>
             </div>
             <div>
-              <label className="text-xs text-zinc-300 font-medium">Role</label>
-              <div className="text-sm font-medium capitalize">{profile?.role?.replace('_', ' ')}</div>
+              <label className="text-xs text-[#6A6A73] font-medium">Role</label>
+              <div className="text-sm font-medium text-[#111113] mt-0.5 capitalize">{profile?.role?.replace('_', ' ')}</div>
             </div>
           </div>
         </CardContent>
@@ -123,16 +123,16 @@ export default function AgentProfilePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-white mb-1.5 block">NRIC Number</label>
+              <label className="text-sm font-medium text-[#111113] mb-1.5 block">NRIC Number</label>
               <input
                 type="text"
                 placeholder="e.g. 901231-14-5678"
-                className="w-full h-10 px-3 text-sm rounded-lg border border-white/20 bg-black/35 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-white/70"
+                className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white text-[#111113] placeholder:text-gray-400 focus:ring-2 focus:ring-[#D7263D]/30 focus:outline-none"
                 value={nricNumber}
                 onChange={(e) => setNricNumber(e.target.value)}
                 required
               />
-              <p className="text-xs text-zinc-400 mt-1">Your IC is used for commission tax reporting. Admin can view but not edit after you set it.</p>
+              <p className="text-xs text-[#6A6A73] mt-1">Your IC is used for commission tax reporting. Admin can view but not edit after you set it.</p>
             </div>
           </CardContent>
         </Card>
@@ -144,33 +144,33 @@ export default function AgentProfilePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-white mb-1.5 block">Bank Name</label>
+              <label className="text-sm font-medium text-[#111113] mb-1.5 block">Bank Name</label>
               <input
                 type="text"
                 placeholder="e.g. Maybank"
-                className="w-full h-10 px-3 text-sm rounded-lg border border-white/20 bg-black/35 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-white/70"
+                className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white text-[#111113] placeholder:text-gray-400 focus:ring-2 focus:ring-[#D7263D]/30 focus:outline-none"
                 value={bankName}
                 onChange={(e) => setBankName(e.target.value)}
                 required
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-white mb-1.5 block">Account Name</label>
+              <label className="text-sm font-medium text-[#111113] mb-1.5 block">Account Name</label>
               <input
                 type="text"
                 placeholder="Your name exactly as per bank account"
-                className="w-full h-10 px-3 text-sm rounded-lg border border-white/20 bg-black/35 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-white/70"
+                className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white text-[#111113] placeholder:text-gray-400 focus:ring-2 focus:ring-[#D7263D]/30 focus:outline-none"
                 value={bankAccountName}
                 onChange={(e) => setBankAccountName(e.target.value)}
                 required
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-white mb-1.5 block">Account Number</label>
+              <label className="text-sm font-medium text-[#111113] mb-1.5 block">Account Number</label>
               <input
                 type="text"
                 placeholder="Bank account number without spaces"
-                className="w-full h-10 px-3 text-sm rounded-lg border border-white/20 bg-black/35 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-white/70"
+                className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white text-[#111113] placeholder:text-gray-400 focus:ring-2 focus:ring-[#D7263D]/30 focus:outline-none"
                 value={bankAccountNumber}
                 onChange={(e) => setBankAccountNumber(e.target.value)}
                 required

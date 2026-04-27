@@ -201,7 +201,7 @@ export default function CalculationsPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[360px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
@@ -276,7 +276,13 @@ export default function CalculationsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => toast.info("PDF generation coming soon")}
+                              onClick={() => {
+                                if (calc.loan_type === "refinance") {
+                                  window.open(`/agent/calculations/${calc.id}/print`, "_blank")
+                                } else {
+                                  toast.info("PDF report is only available for refinance calculations")
+                                }
+                              }}
                             >
                               <FileText className="h-3 w-3" />
                               <span className="hidden sm:inline">Report</span>

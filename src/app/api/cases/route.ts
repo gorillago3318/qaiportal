@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     }
 
     query = query
-      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
     const { data, error, count } = await query

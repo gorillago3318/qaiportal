@@ -61,7 +61,11 @@ function downloadCsv(rows: ReportRow[]) {
     "Bank", "Lawyer", "Prof. Fee", "Discount",
     "Type", "Gross Amount", "RM50 Admin", "RM200 Admin",
     "Company Cut (10%)", "Net Distributable",
-    "Agent", "Sr. Agent", "Unit Manager", "Agency Manager", "Platform Fee (7.5%)",
+    "Agent Name", "Agent Amount (RM)",
+    "Sr. Agent Name", "Sr. Agent Amount (RM)",
+    "Unit Manager Name", "Unit Manager Amount (RM)",
+    "Agency Manager Name", "Agency Manager Amount (RM)",
+    "Platform Fee Recipient", "Platform Fee Amount (RM)",
     "Status", "Paid Date",
   ]
 
@@ -88,10 +92,15 @@ function downloadCsv(rows: ReportRow[]) {
     r.panel_admin_fee.toFixed(2),
     r.company_cut.toFixed(2),
     r.net_distributable.toFixed(2),
+    r.tiers.agent.name !== "—" ? r.tiers.agent.name : "",
     r.tiers.agent.amount.toFixed(2),
+    r.tiers.senior_agent.name !== "—" ? r.tiers.senior_agent.name : "",
     r.tiers.senior_agent.amount.toFixed(2),
+    r.tiers.unit_manager.name !== "—" ? r.tiers.unit_manager.name : "",
     r.tiers.unit_manager.amount.toFixed(2),
+    r.tiers.agency_manager.name !== "—" ? r.tiers.agency_manager.name : "",
     r.tiers.agency_manager.amount.toFixed(2),
+    r.tiers.platform_fee.name !== "—" ? r.tiers.platform_fee.name : "",
     r.tiers.platform_fee.amount.toFixed(2),
     r.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
     r.paid_at ? formatDate(r.paid_at) : "",
@@ -138,6 +147,12 @@ export default function AdminReportsPage() {
   const totalAgent = rows.reduce((s, r) => s + r.tiers.agent.amount, 0)
   const totalPlatform = rows.reduce((s, r) => s + r.tiers.platform_fee.amount, 0)
 
+  // ── QAI Revenue Capture totals ──
+  const totalRM50 = rows.reduce((s, r) => s + r.bank_admin_fee, 0)
+  const totalRM200 = rows.reduce((s, r) => s + r.panel_admin_fee, 0)
+  const totalCompanyCut = rows.reduce((s, r) => s + r.company_cut, 0)
+  const totalQAIRevenue = totalRM50 + totalRM200 + totalCompanyCut + totalPlatform
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -157,13 +172,13 @@ export default function AdminReportsPage() {
         </Button>
       </div>
 
-      {/* Summary Cards */}
+      {/* Flow Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Total Gross", value: totalGross, color: "text-[#0A1628]" },
           { label: "Net Distributable", value: totalNet, color: "text-blue-700" },
           { label: "Agent Payouts", value: totalAgent, color: "text-teal-700" },
-          { label: "Platform Fees", value: totalPlatform, color: "text-amber-700" },
+          { label: "Platform Fees (7.5%)", value: totalPlatform, color: "text-amber-700" },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3">
@@ -173,6 +188,87 @@ export default function AdminReportsPage() {
           </Card>
         ))}
       </div>
+
+      {/* QAI Revenue Capture */}
+      <Card className="border-[#0A1628]/15">
+        <CardContent className="pt-5 pb-4">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="h-1.5 w-5 rounded-full bg-[#0A1628]" />
+            <h2 className="text-sm font-bold text-[#0A1628] uppercase tracking-widest">QAI Revenue Capture</h2>
+            <span className="ml-auto text-xs text-gray-400">{rows.length} records in view</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[
+              {
+                label: "RM50 Admin Fees",
+                sublabel: "Flat deduction per bank comm.",
+                value: totalRM50,
+                tag: "RM 50 / case",
+                color: "text-indigo-700",
+                bg: "bg-indigo-50",
+                border: "border-indigo-100",
+              },
+              {
+                label: "RM200 Panel Fees",
+                sublabel: "Panel lawyer LA admin deduction",
+                value: totalRM200,
+                tag: "RM 200 / lawyer",
+                color: "text-purple-700",
+                bg: "bg-purple-50",
+                border: "border-purple-100",
+              },
+              {
+                label: "Company Cut (10%)",
+                sublabel: "10% of lawyer prof. fee",
+                value: totalCompanyCut,
+                tag: "10% of prof. fee",
+                color: "text-rose-700",
+                bg: "bg-rose-50",
+                border: "border-rose-100",
+              },
+              {
+                label: "Platform Fee (7.5%)",
+                sublabel: "Super Admin platform share",
+                value: totalPlatform,
+                tag: "7.5% of net",
+                color: "text-amber-700",
+                bg: "bg-amber-50",
+                border: "border-amber-100",
+              },
+              {
+                label: "Total QAI Revenue",
+                sublabel: "RM50 + RM200 + 10% + 7.5%",
+                value: totalQAIRevenue,
+                tag: "All captures",
+                color: "text-white",
+                bg: "bg-white/10",
+                border: "border-[#0A1628]/20",
+                highlight: true,
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className={`rounded-xl border ${item.border} p-4 ${item.highlight ? "bg-[#0A1628]" : "bg-white"}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.highlight ? "bg-white/10 text-white" : `${item.bg} ${item.color}`}`}>
+                    {item.tag}
+                  </span>
+                </div>
+                <p className={`text-lg font-bold font-heading tabular-nums ${item.highlight ? "text-white" : item.color}`}>
+                  {formatCurrency(item.value)}
+                </p>
+                <p className={`text-xs mt-0.5 font-semibold ${item.highlight ? "text-white/80" : "text-gray-700"}`}>
+                  {item.label}
+                </p>
+                <p className={`text-[10px] mt-0.5 ${item.highlight ? "text-white/50" : "text-gray-400"}`}>
+                  {item.sublabel}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
@@ -193,21 +289,27 @@ export default function AdminReportsPage() {
           ))}
         </div>
 
-        {/* Date range */}
+        {/* Date range — values stored as YYYY-MM-DD, displayed as DD/MM/YYYY */}
         <div className="flex items-center gap-2 ml-auto text-sm">
           <Filter className="h-4 w-4 text-gray-400" />
+          <span className="text-xs text-gray-400 whitespace-nowrap">From</span>
           <input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
+            title="DD/MM/YYYY"
             className="h-8 px-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+            style={{ colorScheme: "light" }}
           />
           <span className="text-gray-400">—</span>
+          <span className="text-xs text-gray-400 whitespace-nowrap">To</span>
           <input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
+            title="DD/MM/YYYY"
             className="h-8 px-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+            style={{ colorScheme: "light" }}
           />
           {(dateFrom || dateTo) && (
             <button
@@ -266,6 +368,7 @@ export default function AdminReportsPage() {
                     <th className="text-right px-3 py-3 font-semibold text-gray-500 whitespace-nowrap">Agency Mgr</th>
                     <th className="text-right px-3 py-3 font-semibold text-gray-500 whitespace-nowrap">Platform 7.5%</th>
                     <th className="text-left px-3 py-3 font-semibold text-gray-500 whitespace-nowrap">Status</th>
+                    <th className="text-left px-3 py-3 font-semibold text-gray-500 whitespace-nowrap">Created</th>
                     <th className="text-left px-3 py-3 font-semibold text-gray-500 whitespace-nowrap">Paid Date</th>
                   </tr>
                 </thead>
@@ -332,6 +435,9 @@ export default function AdminReportsPage() {
                           {r.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                         </span>
                       </td>
+                      <td className="px-3 py-3 text-gray-400 whitespace-nowrap">
+                        {formatDate(r.created_at)}
+                      </td>
                       <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
                         {r.paid_at ? formatDate(r.paid_at) : "—"}
                       </td>
@@ -343,7 +449,9 @@ export default function AdminReportsPage() {
                   <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
                     <td colSpan={9} className="px-3 py-3 text-gray-500 text-right">TOTAL ({rows.length} records)</td>
                     <td className="px-3 py-3 text-right text-[#0A1628]">{formatCurrency(totalGross)}</td>
-                    <td colSpan={3} />
+                    <td className="px-3 py-3 text-right text-indigo-700">{formatCurrency(totalRM50)}</td>
+                    <td className="px-3 py-3 text-right text-purple-700">{formatCurrency(totalRM200)}</td>
+                    <td className="px-3 py-3 text-right text-rose-700">{formatCurrency(totalCompanyCut)}</td>
                     <td className="px-3 py-3 text-right text-[#0A1628]">{formatCurrency(totalNet)}</td>
                     <td className="px-3 py-3 text-right text-teal-700">
                       {formatCurrency(rows.reduce((s, r) => s + r.tiers.agent.amount, 0))}
@@ -360,7 +468,35 @@ export default function AdminReportsPage() {
                     <td className="px-3 py-3 text-right text-amber-700">
                       {formatCurrency(totalPlatform)}
                     </td>
-                    <td colSpan={2} />
+                    <td colSpan={3} />
+                  </tr>
+                  {/* QAI Revenue capture summary row */}
+                  <tr className="bg-[#0A1628]/4 border-t border-[#0A1628]/10">
+                    <td colSpan={10} className="px-3 py-2 text-xs font-bold text-[#0A1628] text-right uppercase tracking-wide">
+                      QAI Revenue Captured
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="text-[10px] text-indigo-500 font-medium">RM50</div>
+                      <div className="text-xs font-bold text-indigo-700">{formatCurrency(totalRM50)}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="text-[10px] text-purple-500 font-medium">RM200</div>
+                      <div className="text-xs font-bold text-purple-700">{formatCurrency(totalRM200)}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="text-[10px] text-rose-500 font-medium">Co. 10%</div>
+                      <div className="text-xs font-bold text-rose-700">{formatCurrency(totalCompanyCut)}</div>
+                    </td>
+                    <td colSpan={4} />
+                    <td className="px-3 py-2 text-right">
+                      <div className="text-[10px] text-amber-500 font-medium">Platform</div>
+                      <div className="text-xs font-bold text-amber-700">{formatCurrency(totalPlatform)}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right" colSpan={2}>
+                      <div className="text-[10px] text-[#0A1628]/60 font-medium">Total QAI</div>
+                      <div className="text-sm font-black text-[#0A1628]">{formatCurrency(totalQAIRevenue)}</div>
+                    </td>
+                    <td />
                   </tr>
                 </tfoot>
               </table>

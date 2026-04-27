@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { DollarSign, X } from "lucide-react"
+import { DollarSign, X, ChevronDown, ChevronUp } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -28,6 +28,30 @@ type CommissionRow = {
   } | null
 }
 
+interface TierEntry {
+  role: string
+  name: string
+  percentage: number
+  amount: number
+  is_platform_fee?: boolean
+}
+
+interface BreakdownEntry extends TierEntry {
+  user_id: string
+  bank_name: string | null
+  bank_account_number: string | null
+  bank_account_name: string | null
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  agent: "Agent",
+  senior_agent: "Senior Agent",
+  unit_manager: "Unit Manager",
+  agency_manager: "Agency Manager",
+  admin: "Admin",
+  super_admin: "Platform Fee",
+}
+
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-gray-100 text-gray-600",
   calculated: "bg-blue-100 text-blue-700",
@@ -50,6 +74,8 @@ export default function AdminCommissionsPage() {
   const [payModal, setPayModal] = React.useState<CommissionRow | null>(null)
   const [payForm, setPayForm] = React.useState({ paid_amount: "", payment_reference: "", paid_at: "" })
   const [paying, setPaying] = React.useState(false)
+  const [payBreakdown, setPayBreakdown] = React.useState<BreakdownEntry[]>([])
+  const [breakdownOpen, setBreakdownOpen] = React.useState(true)
 
   const fetchCommissions = React.useCallback(async () => {
     setLoading(true)
@@ -70,6 +96,45 @@ export default function AdminCommissionsPage() {
   // sum of all rows in the case, causing double-counting when multiple commission types exist.
   const totalPaid = commissions.filter((c) => c.status === "paid").reduce((s, c) => s + (c.net_distributable || 0), 0)
   const totalPending = commissions.filter((c) => c.status === "payment_pending").reduce((s, c) => s + (c.net_distributable || 0), 0)
+
+  const handleOpenPayModal = async (c: CommissionRow) => {
+    setPayModal(c)
+    setPayForm({
+      paid_amount: String(c.net_distributable),
+      payment_reference: "",
+      paid_at: new Date().toISOString().slice(0, 10),
+    })
+    setBreakdownOpen(true)
+    setPayBreakdown([])
+
+    // Fetch bank details for each user in tier_breakdown (via admin API to bypass RLS)
+    const breakdown = (c.tier_breakdown || {}) as Record<string, TierEntry>
+    const userIds = Object.keys(breakdown).filter((id) => breakdown[id]?.amount > 0)
+    if (userIds.length === 0) return
+
+    const res = await fetch('/api/profiles/bank-details', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_ids: userIds }),
+    })
+    const profileJson = res.ok ? await res.json() : { data: [] }
+
+    const profileMap: Record<string, { bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null }> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    profileJson.data?.forEach((p: any) => { profileMap[p.id] = p })
+
+    const entries: BreakdownEntry[] = userIds
+      .map((userId) => ({
+        ...(breakdown[userId] as TierEntry),
+        user_id: userId,
+        bank_name: profileMap[userId]?.bank_name ?? null,
+        bank_account_number: profileMap[userId]?.bank_account_number ?? null,
+        bank_account_name: profileMap[userId]?.bank_account_name ?? null,
+      }))
+      .sort((a, b) => b.amount - a.amount)
+
+    setPayBreakdown(entries)
+  }
 
   const handleMarkPaid = async () => {
     if (!payModal) return
@@ -167,7 +232,7 @@ export default function AdminCommissionsPage() {
               <p className="text-gray-400 text-sm">Commissions are created when cases reach approved status</p>
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[460px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
@@ -213,7 +278,7 @@ export default function AdminCommissionsPage() {
                           {c.status !== "paid" && (
                             <Button
                               size="sm"
-                              onClick={() => { setPayModal(c); setPayForm({ paid_amount: String(c.net_distributable), payment_reference: "", paid_at: new Date().toISOString().slice(0, 10) }) }}
+                              onClick={() => handleOpenPayModal(c)}
                               className="bg-teal-600 hover:bg-teal-700 text-white text-xs"
                             >
                               Mark Paid
@@ -237,45 +302,121 @@ export default function AdminCommissionsPage() {
 
       {/* Pay Modal */}
       {payModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-heading text-lg font-bold text-[#0A1628]">Mark as Paid</h2>
-              <button onClick={() => setPayModal(null)} className="text-gray-400 hover:text-gray-600">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white rounded-t-2xl border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="font-heading text-lg font-bold text-[#0A1628]">Mark as Paid</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Case {payModal.case?.case_code} · {payModal.type === "bank" ? "Bank" : "Lawyer"} Commission
+                </p>
+              </div>
+              <button onClick={() => setPayModal(null)} className="text-gray-400 hover:text-gray-600 p-1">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Amount Paid (RM)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={payForm.paid_amount}
-                  onChange={(e) => setPayForm({ ...payForm, paid_amount: e.target.value })}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                />
+
+            <div className="px-6 py-5 space-y-5">
+              {/* Payout Breakdown */}
+              <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <button
+                  onClick={() => setBreakdownOpen((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-[#0A1628]">Payout Recipients</span>
+                    <span className="text-xs bg-[#0A1628] text-white px-1.5 py-0.5 rounded-full font-medium">
+                      {payBreakdown.length}
+                    </span>
+                  </div>
+                  {breakdownOpen ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                </button>
+
+                {breakdownOpen && (
+                  <div className="divide-y divide-gray-50">
+                    {payBreakdown.length === 0 ? (
+                      <div className="px-4 py-3 text-xs text-gray-400 text-center">Loading breakdown...</div>
+                    ) : (
+                      payBreakdown.map((entry) => (
+                        <div key={entry.user_id} className="px-4 py-3">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div>
+                              <span className="text-sm font-semibold text-[#0A1628]">{entry.name}</span>
+                              <span className="ml-2 text-xs text-gray-400">
+                                {entry.is_platform_fee ? "Platform Fee" : ROLE_LABELS[entry.role] || entry.role}
+                                {" · "}{entry.percentage.toFixed(1)}%
+                              </span>
+                            </div>
+                            <span className="text-sm font-bold text-teal-700">{formatCurrency(entry.amount)}</span>
+                          </div>
+                          {/* Bank details */}
+                          {entry.bank_account_number ? (
+                            <div className="mt-1 bg-blue-50 rounded-lg px-3 py-2 text-xs space-y-0.5">
+                              <div className="flex gap-2">
+                                <span className="text-gray-400 w-16 flex-shrink-0">Bank</span>
+                                <span className="font-medium text-[#0A1628]">{entry.bank_name || "—"}</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <span className="text-gray-400 w-16 flex-shrink-0">Account</span>
+                                <span className="font-mono font-semibold text-[#0A1628] tracking-wider">{entry.bank_account_number}</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <span className="text-gray-400 w-16 flex-shrink-0">Name</span>
+                                <span className="font-medium text-[#0A1628]">{entry.bank_account_name || "—"}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1 mt-1">
+                              ⚠ No bank details on file — ask agent to update their profile.
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    )}
+                    {/* Total */}
+                    <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total to Distribute</span>
+                      <span className="font-bold text-[#0A1628]">{formatCurrency(payModal.net_distributable)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Payment Reference</label>
-                <input
-                  type="text"
-                  value={payForm.payment_reference}
-                  onChange={(e) => setPayForm({ ...payForm, payment_reference: e.target.value })}
-                  placeholder="Bank transfer ref / receipt no."
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                />
+
+              {/* Payment form */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Total Amount Paid (RM)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={payForm.paid_amount}
+                    onChange={(e) => setPayForm({ ...payForm, paid_amount: e.target.value })}
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Payment Reference</label>
+                  <input
+                    type="text"
+                    value={payForm.payment_reference}
+                    onChange={(e) => setPayForm({ ...payForm, payment_reference: e.target.value })}
+                    placeholder="Bank transfer ref / receipt no."
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Payment Date (DD/MM/YYYY)</label>
+                  <input
+                    type="date"
+                    value={payForm.paid_at}
+                    onChange={(e) => setPayForm({ ...payForm, paid_at: e.target.value })}
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#0A1628] mb-1.5">Payment Date</label>
-                <input
-                  type="date"
-                  value={payForm.paid_at}
-                  onChange={(e) => setPayForm({ ...payForm, paid_at: e.target.value })}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                />
-              </div>
-              <div className="flex gap-3 pt-1">
+
+              <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setPayModal(null)} className="flex-1">Cancel</Button>
                 <Button onClick={handleMarkPaid} disabled={paying} className="flex-1 bg-teal-600 hover:bg-teal-700 text-white">
                   {paying ? "Processing..." : "Confirm Paid"}

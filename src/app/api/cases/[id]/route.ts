@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getAdminClient, getCallerProfile } from '@/lib/supabase/admin'
+import { logAudit } from '@/lib/audit'
 import {
   calculateBankCommission,
   calculateLawyerCommission,
@@ -404,6 +405,21 @@ export async function PATCH(
         notes: notes || null,
       })
 
+      // Audit log: status change
+      const caseCode = (updatedCase as Record<string, unknown>)?.case_code ?? id
+      const { data: actorProfile } = await adminDb
+        .from('profiles').select('full_name').eq('id', user.id).single()
+      await logAudit(adminDb, {
+        actorId: user.id,
+        actorName: actorProfile?.full_name ?? 'Unknown',
+        actorRole: profile?.role ?? 'agent',
+        action: 'case_status_changed',
+        entityType: 'case',
+        entityId: id,
+        entityLabel: String(caseCode),
+        metadata: { from: currentCase.status, to: newStatus, notes: notes ?? null },
+      })
+
       // Notify Agent if Admin changed status
       if (isAdmin && currentCase.agent_id) {
         await adminDb.from('notifications').insert({
@@ -413,6 +429,27 @@ export async function PATCH(
           type: 'case_update',
           case_id: id,
         })
+      }
+
+      // Notify Admins if Agent changed status
+      if (!isAdmin) {
+        const { data: admins } = await adminDb
+          .from('profiles')
+          .select('id')
+          .in('role', ['admin', 'super_admin'])
+        if (admins?.length) {
+          const caseCode = (updatedCase as Record<string, unknown>)?.case_code ?? id
+          await adminDb.from('notifications').insert(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            admins.map((a: any) => ({
+              user_id: a.id,
+              title: 'Agent Updated Case',
+              message: `Case ${caseCode}: status changed to ${newStatus} by agent.`,
+              type: 'case_update',
+              case_id: id,
+            }))
+          )
+        }
       }
     }
 

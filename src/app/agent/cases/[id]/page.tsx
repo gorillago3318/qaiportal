@@ -626,6 +626,7 @@ interface CaseDetail {
     role: UserRole
   } | null
   proposed_bank: { id: string; name: string } | null
+  lawyer: { id: string; name: string; firm: string; is_panel: boolean; contact_email: string | null } | null
   status_history: Array<{
     id: string
     from_status: CaseStatus | null
@@ -669,6 +670,7 @@ export default function AgentCaseDetailPage() {
   // Accept case (approved → accepted) with LO upload
   const [showAcceptModal, setShowAcceptModal] = useState(false)
   const [loFile, setLoFile] = useState<File | null>(null)
+  const [docPackageFile, setDocPackageFile] = useState<File | null>(null)
   const [acceptingCase, setAcceptingCase] = useState(false)
   const commentsEndRef = useRef<HTMLDivElement>(null)
 
@@ -824,19 +826,39 @@ export default function AgentCaseDetailPage() {
       toast.error('Please upload the signed Letter of Offer first')
       return
     }
+    const isPanelLawyer = !!(caseData?.lawyer?.is_panel)
+    if (isPanelLawyer && !docPackageFile) {
+      toast.error('Please upload the document package for the panel lawyer')
+      return
+    }
     setAcceptingCase(true)
     try {
       const supabaseClient = createClient()
-      const ext = loFile.name.split('.').pop()
-      const fileName = `${id}/signed_lo_${Date.now()}.${ext}`
-      const { error: uploadError } = await supabaseClient.storage
-        .from('case-documents')
-        .upload(fileName, loFile)
-      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
 
-      const { data: publicUrlData } = supabaseClient.storage
-        .from('case-documents')
-        .getPublicUrl(fileName)
+      // Helper: upload a file to storage and return doc metadata
+      const uploadFile = async (file: File, docType: string, prefix: string) => {
+        const ext = file.name.split('.').pop()
+        const fileName = `${id}/${prefix}_${Date.now()}.${ext}`
+        const { error: uploadError } = await supabaseClient.storage
+          .from('case-documents')
+          .upload(fileName, file)
+        if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
+        const { data: publicUrlData } = supabaseClient.storage
+          .from('case-documents')
+          .getPublicUrl(fileName)
+        return {
+          document_type: docType,
+          file_name: file.name,
+          file_url: publicUrlData.publicUrl,
+          file_size: file.size,
+        }
+      }
+
+      const newDocs = []
+      newDocs.push(await uploadFile(loFile, 'Signed Letter of Offer', 'signed_lo'))
+      if (docPackageFile) {
+        newDocs.push(await uploadFile(docPackageFile, 'Document Package (IC/SPA/Title/Quit Rent)', 'doc_package'))
+      }
 
       const res = await fetch(`/api/cases/${id}`, {
         method: 'PATCH',
@@ -844,21 +866,27 @@ export default function AgentCaseDetailPage() {
         body: JSON.stringify({
           status: 'accepted',
           notes: 'Agent accepted case with signed Letter of Offer.',
-          new_documents: [{
-            document_type: 'Signed Letter of Offer',
-            file_name: loFile.name,
-            file_url: publicUrlData.publicUrl,
-            file_size: loFile.size,
-          }],
+          new_documents: newDocs,
         }),
       })
       if (!res.ok) {
         const j = await res.json()
         throw new Error(j.error || 'Failed to accept case')
       }
+
+      // Notify panel lawyer via email
+      if (isPanelLawyer) {
+        try {
+          await fetch(`/api/cases/${id}/accept-notify-lawyer`, { method: 'POST' })
+        } catch {
+          // non-fatal — case is already accepted
+        }
+      }
+
       toast.success('Case accepted! Lawyer will be notified to begin LA preparation.')
       setShowAcceptModal(false)
       setLoFile(null)
+      setDocPackageFile(null)
       await fetchCase()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to accept case')
@@ -1315,56 +1343,109 @@ export default function AgentCaseDetailPage() {
       <ActivityTimeline caseId={id} />
 
       {/* Accept Case Modal (approved → accepted) */}
-      {showAcceptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-in fade-in zoom-in duration-200">
-            <h2 className="text-xl font-bold text-[#0A1628] mb-1">Accept Case</h2>
-            <p className="text-sm text-gray-500 mb-6 border-b pb-4">
-              Upload the bank-signed Letter of Offer to confirm acceptance.
-            </p>
+      {showAcceptModal && (() => {
+        const isPanelLawyer = !!(caseData?.lawyer?.is_panel)
+        const lawyerEmail = caseData?.lawyer?.contact_email
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <h2 className="text-xl font-bold text-[#0A1628] mb-1">Accept Case</h2>
+                <p className="text-sm text-gray-500 mb-6 border-b pb-4">
+                  Upload the bank-signed Letter of Offer to confirm acceptance.
+                  {isPanelLawyer && ' Also upload the document package for the panel lawyer.'}
+                </p>
 
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-[#0A1628] mb-2">
-                  Signed Letter of Offer <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-[#F3F4F6] file:text-[#0A1628] hover:file:bg-[#E5E7EB] cursor-pointer border rounded-lg pl-1 py-1"
-                  onChange={(e) => setLoFile(e.target.files?.[0] ?? null)}
-                />
-                <p className="text-xs text-gray-400 mt-1">Accepted formats: PDF, JPG, PNG</p>
-              </div>
+                <div className="space-y-5">
+                  {/* Signed LO */}
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0A1628] mb-2">
+                      Signed Letter of Offer <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-[#F3F4F6] file:text-[#0A1628] hover:file:bg-[#E5E7EB] cursor-pointer border rounded-lg pl-1 py-1"
+                      onChange={(e) => setLoFile(e.target.files?.[0] ?? null)}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Accepted formats: PDF, JPG, PNG</p>
+                    {loFile && (
+                      <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-green-50 rounded-lg text-xs text-green-700">
+                        <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+                        {loFile.name} ({(loFile.size / 1024).toFixed(1)} KB)
+                      </div>
+                    )}
+                  </div>
 
-              {loFile && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg text-xs text-green-700">
-                  <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
-                  {loFile.name} ({(loFile.size / 1024).toFixed(1)} KB)
+                  {/* Document package — panel lawyer only */}
+                  {isPanelLawyer && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-blue-900 mb-0.5">Document Package <span className="text-red-500">*</span></p>
+                        <p className="text-xs text-blue-700 mb-3">
+                          Combine all of the following into one PDF and upload:
+                          IC copy, SPA, Cukai Tanah, Quit Rent, Previous Loan Agreement / LO, Title copy.
+                        </p>
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-100 file:text-blue-800 hover:file:bg-blue-200 cursor-pointer border border-blue-300 rounded-lg pl-1 py-1 bg-white"
+                          onChange={(e) => setDocPackageFile(e.target.files?.[0] ?? null)}
+                        />
+                        {docPackageFile && (
+                          <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-green-50 rounded-lg text-xs text-green-700">
+                            <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+                            {docPackageFile.name} ({(docPackageFile.size / 1024).toFixed(1)} KB)
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Lawyer confirmation */}
+                      <div className="border-t border-blue-200 pt-3">
+                        <p className="text-xs font-semibold text-blue-900 mb-1.5">This package will be sent to:</p>
+                        <div className="bg-white rounded-lg px-3 py-2.5 text-xs space-y-1">
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-10 flex-shrink-0">To</span>
+                            <span className="font-medium text-[#0A1628]">
+                              {caseData?.lawyer?.name}{caseData?.lawyer?.firm ? ` — ${caseData.lawyer.firm}` : ''}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-10 flex-shrink-0">Email</span>
+                            <span className="font-medium text-[#0A1628]">{lawyerEmail || '(no email on file)'}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-10 flex-shrink-0">CC</span>
+                            <span className="font-medium text-[#0A1628]">makwaikit@gmail.com</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800">
+                    Once accepted, you cannot edit the case.{isPanelLawyer ? ' The document package will be emailed to the lawyer automatically.' : ' The lawyer will be notified to begin LA preparation.'}
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-2">
+                    <Button variant="outline" onClick={() => { setShowAcceptModal(false); setLoFile(null); setDocPackageFile(null) }} disabled={acceptingCase}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="gold"
+                      onClick={handleAcceptCase}
+                      disabled={acceptingCase || !loFile || (isPanelLawyer && !docPackageFile)}
+                    >
+                      {acceptingCase ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
+                      {acceptingCase ? 'Uploading...' : isPanelLawyer ? 'Confirm Accept & Send to Lawyer' : 'Confirm Accept'}
+                    </Button>
+                  </div>
                 </div>
-              )}
-
-              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800">
-                Once accepted, you cannot edit the case. The lawyer will be notified to begin LA preparation.
-              </div>
-
-              <div className="flex gap-3 justify-end pt-2">
-                <Button variant="outline" onClick={() => { setShowAcceptModal(false); setLoFile(null) }} disabled={acceptingCase}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="gold"
-                  onClick={handleAcceptCase}
-                  disabled={acceptingCase || !loFile}
-                >
-                  {acceptingCase ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
-                  {acceptingCase ? 'Uploading...' : 'Confirm Accept'}
-                </Button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

@@ -11,7 +11,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-xl",
+      "rounded-xl overflow-hidden",
       (elevated ? "card-elevated" : "glass"),
       (!elevated && bordered && "border border-border/50"),
       "transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)]",

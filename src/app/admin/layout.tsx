@@ -9,6 +9,8 @@ import {
   Topbar,
   MobileSidebarOverlay,
 } from "@/components/ui/sidebar"
+import { useInactivityLogout } from "@/hooks/useInactivityLogout"
+import { useSessionGuard } from "@/hooks/useSessionGuard"
 
 export default function AdminLayout({
   children,
@@ -21,6 +23,9 @@ export default function AdminLayout({
   const [userName, setUserName] = React.useState<string>("")
   const [userEmail, setUserEmail] = React.useState<string>("")
   const [isSuperAdmin, setIsSuperAdmin] = React.useState(false)
+
+  useInactivityLogout('/login')
+  useSessionGuard('/login')
 
   React.useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

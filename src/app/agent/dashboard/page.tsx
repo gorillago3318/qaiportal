@@ -22,7 +22,17 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { createClient } from "@/lib/supabase/client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
-import type { Profile, Calculation, CaseStatus } from "@/types/database"
+import type { Profile, Calculation, CaseStatus, LoanType } from "@/types/database"
+
+interface RecentCase {
+  id: string
+  case_code: string
+  status: CaseStatus
+  loan_type: LoanType
+  proposed_loan_amount: number | null
+  created_at: string
+  client: { full_name: string } | null
+}
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
@@ -136,6 +146,7 @@ export default function AgentDashboardPage() {
   const [pipelineCommissions, setPipelineCommissions] = React.useState(0)
   const [notifications, setNotifications] = React.useState<AppNotification[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [recentCases, setRecentCases] = React.useState<RecentCase[]>([])
   const [referralLeads, setReferralLeads] = React.useState<Calculation[]>([])
   const [copied, setCopied] = React.useState(false)
 
@@ -187,6 +198,15 @@ export default function AgentDashboardPage() {
         ).length
         setActiveCases(active)
       }
+
+      // Fetch recent cases (last 5)
+      const { data: recentCasesData } = await supabase
+        .from('cases')
+        .select('id, case_code, status, loan_type, proposed_loan_amount, created_at, client:clients(full_name)')
+        .eq('agent_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (recentCasesData) setRecentCases(recentCasesData as unknown as RecentCase[])
 
       // Fetch commissions via API (handles upline tier_breakdown correctly)
       try {
@@ -316,14 +336,14 @@ export default function AgentDashboardPage() {
 
       {/* Main two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Recent Calculations — 60% */}
-        <div className="lg:col-span-3">
+        {/* Recent Cases — 60% */}
+        <div className="lg:col-span-3 min-w-0">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="font-heading text-base">Recent Calculations</CardTitle>
+                <CardTitle className="font-heading text-base">Recent Cases</CardTitle>
                 <Button variant="ghost" size="sm" asChild>
-                  <Link href="/agent/calculations" className="text-[#D7263D] hover:text-[#B61F33] text-xs">
+                  <Link href="/agent/cases" className="text-[#D7263D] hover:text-[#B61F33] text-xs">
                     View all <ArrowRight className="h-3 w-3 ml-1" />
                   </Link>
                 </Button>
@@ -336,73 +356,70 @@ export default function AgentDashboardPage() {
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : recentCalcs.length === 0 ? (
+              ) : recentCases.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-center">
                   <div className="h-14 w-14 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
-                    <Calculator className="h-7 w-7 text-[#6B6B73]" />
+                    <FolderOpen className="h-7 w-7 text-[#6B6B73]" />
                   </div>
-                  <p className="text-sm text-[#5F5F67]">No calculations yet</p>
+                  <p className="text-sm text-[#5F5F67]">No cases yet</p>
+                  <p className="text-xs text-[#9CA3AF] mt-1 max-w-[200px]">Run a calculation first, then create a case when the client is ready.</p>
                   <Button variant="gold" size="sm" className="mt-3" asChild>
                     <Link href="/agent/calculations/new">
-                      <Plus className="h-3 w-3" />
-                      New Calculation
+                      <Calculator className="h-3 w-3" />
+                      Start with a Calculation
                     </Link>
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="overflow-x-auto -mx-6">
                   <table className="w-full text-sm min-w-[340px]">
                     <thead>
                       <tr className="border-b border-[#E3E3E7]">
-                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 pl-4 sm:pl-0">Client</th>
+                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 pl-6">Client</th>
                         <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Type</th>
-                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Est. Saving</th>
-                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Date</th>
-                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-4 sm:pr-0">Action</th>
+                        <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3">Status</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Amount</th>
+                        <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-6">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#ECECF0]">
-                      {recentCalcs.map((calc) => {
-                        const results = calc.results as Record<string, number> | null
-                        const monthlySavings = results?.monthlySavings ?? 0
-                        return (
-                          <tr key={calc.id} className="hover:bg-[#F5F5F8] transition-colors">
-                            <td className="py-3 pr-3 pl-4 sm:pl-0">
-                              <p className="font-medium text-[#17171A] truncate max-w-[120px]">
-                                {calc.client_name}
-                              </p>
-                            </td>
-                            <td className="py-3 pr-3 hidden sm:table-cell">
-                              <span className={cn(
-                                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
-                                LOAN_TYPE_COLORS[calc.loan_type] || "bg-[#F3F3F6] text-[#4D4D56] border-[#DFDFE4]"
-                              )}>
-                                {LOAN_TYPE_LABELS[calc.loan_type] || calc.loan_type}
-                              </span>
-                            </td>
-                            <td className="py-3 pr-3 text-right">
-                              {monthlySavings > 0 ? (
-                                <span className="font-medium text-green-700 text-xs sm:text-sm">
-                                  +{formatCurrency(monthlySavings)}/mo
-                                </span>
-                              ) : (
-                                <span className="text-zinc-400">—</span>
-                              )}
-                            </td>
-                            <td className="py-3 pr-3 text-right text-[#5F5F67] hidden sm:table-cell">
-                              {formatDate(calc.created_at)}
-                            </td>
-                            <td className="py-3 text-right pr-4 sm:pr-0">
-                              <Button variant="ghost" size="sm" asChild>
-                                <Link href={`/agent/calculations/${calc.id}`}>
-                                  <Eye className="h-3 w-3" />
-                                  <span className="hidden sm:inline">View</span>
-                                </Link>
-                              </Button>
-                            </td>
-                          </tr>
-                        )
-                      })}
+                      {recentCases.map((c) => (
+                        <tr key={c.id} className="hover:bg-[#F5F5F8] transition-colors">
+                          <td className="py-3 pr-3 pl-6">
+                            <p className="font-medium text-[#17171A] truncate max-w-[120px]">
+                              {c.client?.full_name || '—'}
+                            </p>
+                            <p className="text-[10px] text-[#9CA3AF] font-mono">{c.case_code}</p>
+                          </td>
+                          <td className="py-3 pr-3 hidden sm:table-cell">
+                            <span className={cn(
+                              "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
+                              LOAN_TYPE_COLORS[c.loan_type] || "bg-[#F3F3F6] text-[#4D4D56] border-[#DFDFE4]"
+                            )}>
+                              {LOAN_TYPE_LABELS[c.loan_type] || c.loan_type}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span className={cn(
+                              "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold",
+                              STATUS_COLORS[c.status] || "bg-gray-100 text-gray-700"
+                            )}>
+                              {STATUS_LABELS[c.status] || c.status}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3 text-right text-[#5F5F67] hidden sm:table-cell text-xs">
+                            {c.proposed_loan_amount ? formatCurrency(c.proposed_loan_amount) : '—'}
+                          </td>
+                          <td className="py-3 text-right pr-6">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={c.status === 'draft' ? `/agent/cases/new?id=${c.id}` : `/agent/cases/${c.id}`}>
+                                <Eye className="h-3 w-3" />
+                                <span className="hidden sm:inline">{c.status === 'draft' ? 'Continue' : 'View'}</span>
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -411,23 +428,23 @@ export default function AgentDashboardPage() {
           </Card>
         </div>
 
-        {/* Quick Actions — 40% */}
+        {/* Quick Actions + Recent Calculations — 40% */}
         <div className="lg:col-span-2">
-          <Card className="h-full">
+          <Card>
             <CardHeader>
               <CardTitle className="font-heading text-base">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <Button variant="gold" size="lg" className="w-full justify-start gap-3" asChild>
-                <Link href="/agent/calculations/new">
-                  <Calculator className="h-5 w-5" />
-                  New Calculation
-                </Link>
-              </Button>
-              <Button variant="navy-outline" size="lg" className="w-full justify-start gap-3" asChild>
                 <Link href="/agent/cases/new">
                   <Plus className="h-5 w-5" />
                   Submit New Case
+                </Link>
+              </Button>
+              <Button variant="navy-outline" size="lg" className="w-full justify-start gap-3" asChild>
+                <Link href="/agent/calculations/new">
+                  <Calculator className="h-5 w-5" />
+                  New Calculation (Pitch)
                 </Link>
               </Button>
               <Button variant="ghost" size="lg" className="w-full justify-start gap-3 text-[#17171A]" asChild>
@@ -439,8 +456,43 @@ export default function AgentDashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Recent Calculations — compact */}
+          {recentCalcs.length > 0 && (
+            <Card className="mt-6">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-heading text-sm text-[#5F5F67]">Recent Calculations</CardTitle>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/agent/calculations" className="text-[#D7263D] hover:text-[#B61F33] text-xs">
+                      View all <ArrowRight className="h-3 w-3 ml-1" />
+                    </Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0">
+                {recentCalcs.slice(0, 4).map((calc) => {
+                  const results = calc.results as Record<string, number> | null
+                  const saving = results?.monthlySavings ?? 0
+                  return (
+                    <Link key={calc.id} href={`/agent/calculations/${calc.id}`}
+                      className="flex items-center justify-between py-2 px-3 rounded-xl hover:bg-[#F5F5F8] transition-colors group">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-[#17171A] truncate max-w-[130px]">{calc.client_name}</p>
+                        <p className="text-[10px] text-[#9CA3AF]">{formatDate(calc.created_at)}</p>
+                      </div>
+                      {saving > 0
+                        ? <span className="text-[10px] font-semibold text-green-700 shrink-0 ml-2">+{formatCurrency(saving)}/mo</span>
+                        : <span className="text-[10px] text-zinc-400 shrink-0 ml-2">—</span>
+                      }
+                    </Link>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Notifications Card */}
-          <Card className="h-full mt-6">
+          <Card className="mt-6">
             <CardHeader className="pb-3">
               <CardTitle className="font-heading text-base flex justify-between items-center">
                 Notifications
@@ -534,15 +586,15 @@ export default function AgentDashboardPage() {
             </p>
 
             {referralLeads.length > 0 && (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <div className="overflow-x-auto -mx-6">
                 <table className="w-full text-sm min-w-[380px]">
                   <thead>
                     <tr className="border-b border-[#E3E3E7]">
-                      <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pl-4 sm:pl-0 pr-3">Client</th>
+                      <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pl-6 pr-3">Client</th>
                       <th className="text-left text-xs font-medium text-[#4D4D56] pb-2 pr-3 hidden sm:table-cell">Contact</th>
                       <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-3">Est. Saving</th>
-                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-4 sm:pr-0 hidden sm:table-cell">Date</th>
-                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-4 sm:pr-0">Action</th>
+                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-6 hidden sm:table-cell">Date</th>
+                      <th className="text-right text-xs font-medium text-[#4D4D56] pb-2 pr-6">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#ECECF0]">
@@ -551,7 +603,7 @@ export default function AgentDashboardPage() {
                       const saving = results?.monthlySavings ?? 0
                       return (
                         <tr key={calc.id} className="hover:bg-[#F5F5F8] transition-colors">
-                          <td className="py-3 pr-3 pl-4 sm:pl-0">
+                          <td className="py-3 pr-3 pl-6">
                             <p className="font-medium text-[#17171A] truncate max-w-[120px]">{calc.client_name}</p>
                             <p className="text-xs text-[#7C7C85]">via referral link</p>
                           </td>
@@ -563,10 +615,10 @@ export default function AgentDashboardPage() {
                               <span className="font-medium text-green-700 text-xs">+{formatCurrency(saving)}/mo</span>
                             ) : <span className="text-zinc-400">—</span>}
                           </td>
-                          <td className="py-3 pr-4 sm:pr-0 text-right text-[#5F5F67] hidden sm:table-cell text-xs">
+                          <td className="py-3 pr-6 text-right text-[#5F5F67] hidden sm:table-cell text-xs">
                             {formatDate(calc.created_at)}
                           </td>
-                          <td className="py-3 pr-4 sm:pr-0 text-right">
+                          <td className="py-3 pr-6 text-right">
                             <Button variant="ghost" size="sm" asChild>
                               <Link href={`/agent/calculations/${calc.id}`}>
                                 <Eye className="h-3 w-3" />

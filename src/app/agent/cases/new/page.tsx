@@ -1419,7 +1419,7 @@ function NewCasePageInner() {
                   Current Financier <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formData.current_bank_name}
+                  value={formData.current_bank_name ?? ''}
                   onChange={e => handleInputChange('current_bank_name', e.target.value)}
                   className={cn(
                     'w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500',
@@ -1524,7 +1524,7 @@ function NewCasePageInner() {
                 Select Panel Lawyer <span className="text-red-500">*</span>
               </label>
               <select
-                value={formData.lawyer_id}
+                value={formData.lawyer_id ?? ''}
                 onChange={(e) => f('lawyer_id')(e.target.value)}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
                 required
@@ -1821,7 +1821,7 @@ function NewCasePageInner() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                 <select
-                  value={formData.client_title}
+                  value={formData.client_title ?? ''}
                   onChange={(e) => handleInputChange('client_title', e.target.value)}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
@@ -1855,7 +1855,7 @@ function NewCasePageInner() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">ID Type *</label>
               <select
-                value={formData.id_type}
+                value={formData.id_type ?? ''}
                 onChange={(e) => handleInputChange('id_type', e.target.value)}
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               >

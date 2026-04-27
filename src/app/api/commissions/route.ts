@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getAdminClient, getCallerProfile } from '@/lib/supabase/admin'
+import { logAudit } from '@/lib/audit'
 
 function getSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
@@ -154,7 +155,17 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json()
     const { status, paid_amount, payment_reference, paid_at } = body
 
-    const { data: updated, error: updateError } = await supabase
+    // Use admin client so RLS doesn't block the update
+    const adminClient = getAdminClient() as any
+
+    // Fetch commission + case to get agent_id before updating
+    const { data: existing } = await adminClient
+      .from('commissions')
+      .select('id, type, net_distributable, case:cases!commissions_case_id_fkey(id, case_code, agent_id)')
+      .eq('id', commissionId)
+      .single()
+
+    const { data: updated, error: updateError } = await adminClient
       .from('commissions')
       .update({
         status,
@@ -168,6 +179,39 @@ export async function PATCH(request: NextRequest) {
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+
+    // Audit log: commission updated
+    const { data: actorProfile } = await adminClient.from('profiles').select('full_name').eq('id', user.id).single()
+    const caseDataForAudit = existing?.case as any
+    await logAudit(adminClient, {
+      actorId: user.id,
+      actorName: actorProfile?.full_name ?? 'Unknown',
+      actorRole: profile?.role ?? 'admin',
+      action: status === 'paid' ? 'commission_paid' : 'commission_updated',
+      entityType: 'commission',
+      entityId: commissionId,
+      entityLabel: caseDataForAudit?.case_code ? `${caseDataForAudit.case_code} (${existing?.type ?? ''})` : commissionId,
+      metadata: { status, paid_amount: paid_amount ?? null, payment_reference: payment_reference ?? null },
+    })
+
+    // Notify agent when commission is marked paid
+    if (status === 'paid' && existing) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const caseData = existing.case as any
+      const agentId = caseData?.agent_id
+      const caseCode = caseData?.case_code ?? 'your case'
+      const commType = existing.type === 'bank' ? 'Bank' : 'Lawyer'
+      const amount = paid_amount ? Number(paid_amount) : existing.net_distributable
+      if (agentId) {
+        await adminClient.from('notifications').insert({
+          user_id: agentId,
+          title: 'Commission Paid',
+          message: `${commType} commission for case ${caseCode} has been paid out (RM${Number(amount).toFixed(2)}).`,
+          type: 'commission_paid',
+          case_id: caseData?.id ?? null,
+        })
+      }
     }
 
     return NextResponse.json({ data: updated })
